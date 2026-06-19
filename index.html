@@ -161,24 +161,43 @@ function shareLink(code){return location.href.split('#')[0]+'#room='+code;}
 /* ============ HOST ============ */
 let H={players:[],catKey:"random",impCount:1,tellCat:true,cat:"",word:"",imps:[],v:0,ts:0};
 let roomCode=null, pushTimer=null;
+let myName=null, myRevealed=false;
+function esc(s){return (''+s).replace(/'/g,"\\'");}
+function hostSetName(n){myName=n;myRevealed=false;renderHost();}
+function hostFlip(){myRevealed=true;renderHost();}
+function hostClearName(){myName=null;myRevealed=false;renderHost();}
 function pushSoon(){clearTimeout(pushTimer);pushTimer=setTimeout(()=>pushTo(roomCode,H),500);}
 
 function renderHost(){
   const created=!!roomCode;
-  let pills=H.players.map((n,i)=>`<span class="pill ${H.imps.includes(n)?'imp':''}"><b>${i+1}</b>${n}<span class="x" onclick="rmName(${i})">×</span></span>`).join("");
+  let pills=H.players.map((n,i)=>`<span class="pill"><b>${i+1}</b>${n}<span class="x" onclick="rmName(${i})">×</span></span>`).join("");
   let chips=[{k:"random",name:"عشوائي 🎲"}].concat(CAT_KEYS.map(k=>({k,name:CATS[k].name})))
     .map(o=>`<button class="chip ${o.k===H.catKey?'active':''}" onclick="setCat('${o.k}')">${o.name}</button>`).join("");
   const maxImp=Math.max(1,H.players.length-1);
   if(H.impCount>maxImp)H.impCount=maxImp;
 
+  let myCard;
+  if(!myName || !H.players.includes(myName)){
+    myCard = `<p class="hint">إنت لاعب معاهم — اختر اسمك عشان تشوف كلمتك:</p>
+      <div class="pills">${H.players.map(n=>`<button class="name-btn" style="padding:11px 14px;flex:0 0 auto" onclick="hostSetName('${esc(n)}')">${n}</button>`).join("")||'<span class="empty">ضيف اللاعبين أول.</span>'}</div>`;
+  } else if(!myRevealed){
+    myCard = `<button class="go" onclick="hostFlip()">🎭 اكشف دورك يا ${myName}</button>
+      <button class="go sec" style="margin-top:10px" onclick="hostClearName()">↩︎ مب أنا</button>`;
+  } else {
+    const imp=H.imps.includes(myName);
+    myCard = `<div class="now-word">${imp
+        ? `<div class="w" style="background:none;-webkit-text-fill-color:var(--red);color:var(--red)">أنت الامبوستر 🤫</div>${H.tellCat?`<div class="c">التصنيف: ${H.cat}</div>`:''}`
+        : `<div class="c">${H.cat}</div><div class="w">${H.word}</div>`}</div>
+      <button class="go sec" onclick="hostClearName()">↩︎ مب أنا</button>`;
+  }
   let liveBlock = created ? `
     <div class="card">
-      <p class="label"><span class="dot"></span> الجولة الحالية</p>
-      <div class="now-word">
-        <div class="c">${H.cat}</div>
-        <div class="w">${H.word}</div>
-        <div class="i">الامبوستر: ${H.imps.join("، ")||"—"}</div>
-      </div>
+      <p class="label"><span class="dot"></span> دورك في اللعبة</p>
+      ${myCard}
+    </div>
+    <div class="card">
+      <p class="label"><span class="dot"></span> التحكّم</p>
+      <p class="hint">يولّد كلمة جديدة سرّية للجميع — ما تشوفها إلا من "دورك" فوق.</p>
       <button class="go" onclick="newRound()">🔄 كلمة جديدة (جولة جديدة)</button>
     </div>
     <div class="card">
@@ -238,8 +257,8 @@ function rmName(i){const n=H.players[i];H.players.splice(i,1);if(H.imps.includes
 function setCat(k){H.catKey=k;renderHost();if(roomCode)pushSoon();}
 function setImp(d){const maxImp=Math.max(1,H.players.length-1);H.impCount=Math.min(maxImp,Math.max(1,H.impCount+d));renderHost();if(roomCode)pushSoon();}
 function pickRound(){const ck=H.catKey==='random'?CAT_KEYS[rndInt(CAT_KEYS.length)]:H.catKey;H.cat=CATS[ck].name;H.word=CATS[ck].words[rndInt(CATS[ck].words.length)];H.imps=shuffle(H.players).slice(0,Math.min(H.impCount,H.players.length-1||1));H.v=(H.v||0)+1;}
-function createRoom(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}roomCode=rndCode();pickRound();location.hash='host='+roomCode;pushTo(roomCode,H);renderHost();toast('تم إنشاء الغرفة ✅');}
-function newRound(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}pickRound();pushTo(roomCode,H);renderHost();toast('كلمة جديدة 🔄');}
+function createRoom(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}roomCode=rndCode();pickRound();myRevealed=false;location.hash='host='+roomCode;pushTo(roomCode,H);renderHost();toast('تم إنشاء الغرفة ✅');}
+function newRound(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}pickRound();myRevealed=false;pushTo(roomCode,H);renderHost();toast('كلمة جديدة 🔄');}
 async function resumeHost(code){roomCode=code;const s=await pullFrom(code);if(s){H=Object.assign(H,s);}renderHost();}
 function cp(t){navigator.clipboard.writeText(t).then(()=>toast('تم نسخ الرابط ✓'));}
 function cpMsg(code){const link=shareLink(code);const msg=`🎭 لعبة الامبوستر — ethical\nافتحوا الرابط واضغطوا على أسمائكم 👇\n${link}`;navigator.clipboard.writeText(msg).then(()=>toast('تم نسخ الرسالة ✓'));}
