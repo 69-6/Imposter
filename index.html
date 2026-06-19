@@ -170,7 +170,7 @@ function pinHash(pin,salt){let h=2166136261>>>0;const s=(salt||'')+':'+pin+':eth
 function lsGet(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function hostSetName(n){myName=n;myRevealed=false;H.pins=H.pins||{};hostPinStage=H.pins[n]?null:'set';renderHost();}
-function hostSubmitPin(){const a=($('hp1').value||'').trim(),b=($('hp2').value||'').trim();const e=$('hperr');if(!/^\d{4}$/.test(a)){e.textContent='لازم ٤ أرقام';return;}if(a!==b){e.textContent='الرمزين ما تطابقوا';return;}H.pins=H.pins||{};H.pins[myName]=pinHash(a,roomCode);hostPinStage=null;pushSoon();renderHost();toast('تم حفظ رمزك ✓');}
+function hostSubmitPin(){const a=($('hp1').value||'').trim();const e=$('hperr');if(!/^\d{4}$/.test(a)){e.textContent='لازم ٤ أرقام';return;}H.pins=H.pins||{};H.pins[myName]=pinHash(a,roomCode);hostPinStage=null;pushSoon();renderHost();toast('تم حفظ رمزك ✓');}
 function hostFlip(){myRevealed=true;renderHost();}
 function hostClearName(){myName=null;myRevealed=false;hostPinStage=null;renderHost();}
 function resetPin(name){if(H.pins)delete H.pins[name];pushSoon();renderHost();toast('تم مسح رمز '+name);}
@@ -191,10 +191,8 @@ function renderHost(){
   } else if(hostPinStage==='set'){
     myCard = `<p class="hint">يا ${myName}، حط رمز سري ٤ أرقام (يحمي اسمك من أي أحد يفتحه):</p>
       <input class="pin" id="hp1" type="tel" inputmode="numeric" maxlength="4" placeholder="٤ أرقام">
-      <div style="height:9px"></div>
-      <input class="pin" id="hp2" type="tel" inputmode="numeric" maxlength="4" placeholder="أعد الرمز">
       <div class="pinerr" id="hperr"></div>
-      <button class="go" onclick="hostSubmitPin()">تأكيد</button>
+      <button class="go" onclick="hostSubmitPin()">حفظ الرمز</button>
       <button class="go sec" style="margin-top:10px" onclick="hostClearName()">↩︎ مب أنا</button>`;
   } else if(!myRevealed){
     myCard = `<button class="go" onclick="hostFlip()">🎭 اكشف دورك يا ${myName}</button>
@@ -311,9 +309,7 @@ function renderPicker(){
 }
 function choose(n){
   picked=n; revealed=false; verified=false; pinStage=null;
-  const dev=lsGet('eth_'+playerCode);
   const existing = S.pins && S.pins[n];
-  if(dev && dev.name===n && existing && dev.h===existing){ verified=true; renderRole(false); return; }
   if(existing){ pinStage='enter'; renderPinEnter(); }
   else { pinStage='set'; renderPinSet(); }
 }
@@ -324,17 +320,15 @@ function renderPinSet(){
     <div class="pick-sub">يا ${picked}، حط رمز ٤ أرقام تتذكره — يمنع أي أحد يفتح اسمك.</div>
     <div style="width:min(320px,90vw)">
       <input class="pin" id="p1" type="tel" inputmode="numeric" maxlength="4" placeholder="٤ أرقام">
-      <div style="height:9px"></div>
-      <input class="pin" id="p2" type="tel" inputmode="numeric" maxlength="4" placeholder="أعد الرمز">
       <div class="pinerr" id="perr"></div>
-      <button class="go" onclick="submitSetPin()">تأكيد ودخول</button>
+      <button class="go" onclick="submitSetPin()">حفظ الرمز</button>
     </div>
     <div class="ctl"><button onclick="picked=null;pinStage=null;renderPicker()">↩︎ رجوع</button></div>`;
 }
 function renderPinEnter(){
   $('roleView').classList.remove('imp');
   $('roleView').innerHTML=`
-    <div class="pick-title">رمز ${picked}</div>
+    <div class="pick-title">رمز ${picked} 🔒</div>
     <div class="pick-sub">اكتب رمزك السري عشان تشوف دورك.</div>
     <div style="width:min(320px,90vw)">
       <input class="pin" id="p1" type="tel" inputmode="numeric" maxlength="4" placeholder="٤ أرقام">
@@ -345,21 +339,20 @@ function renderPinEnter(){
     <div class="ctl"><button onclick="picked=null;pinStage=null;renderPicker()">↩︎ رجوع</button></div>`;
 }
 async function submitSetPin(){
-  const a=($('p1').value||'').trim(), b=($('p2').value||'').trim(), e=$('perr');
+  const a=($('p1').value||'').trim(), e=$('perr');
   if(!/^\d{4}$/.test(a)){e.textContent='لازم ٤ أرقام';return;}
-  if(a!==b){e.textContent='الرمزين ما تطابقوا';return;}
   const h=pinHash(a,playerCode);
   const latest=(await pullFrom(playerCode))||S; latest.pins=latest.pins||{};
-  if(latest.pins[picked] && latest.pins[picked]!==h){ S=latest; pinStage='enter'; renderPinEnter(); $('perr').textContent='الاسم له رمز محطوط — اكتبه'; return; }
+  if(latest.pins[picked] && latest.pins[picked]!==h){ S=latest; pinStage='enter'; renderPinEnter(); $('perr').textContent='الاسم له رمز محطوط مسبقاً — اكتبه'; return; }
   latest.pins[picked]=h; await pushTo(playerCode,latest); S=latest;
-  lsSet('eth_'+playerCode,{name:picked,h});
-  verified=true; pinStage=null; revealed=false; renderRole(false); toast('تم ✓');
+  const nm=picked; picked=null; pinStage=null; verified=false; renderPicker();
+  toast('تم حفظ رمز '+nm+' — اختر اسمك وادخل بالرمز');
 }
 function submitEnterPin(){
   const a=($('p1').value||'').trim(), e=$('perr');
   if(!/^\d{4}$/.test(a)){e.textContent='لازم ٤ أرقام';return;}
   const h=pinHash(a,playerCode);
-  if(S.pins && S.pins[picked]===h){ lsSet('eth_'+playerCode,{name:picked,h}); verified=true; pinStage=null; revealed=false; renderRole(false); }
+  if(S.pins && S.pins[picked]===h){ verified=true; pinStage=null; revealed=false; renderRole(false); }
   else e.textContent='الرمز غير صحيح';
 }
 function renderRole(removed){
