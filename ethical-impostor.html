@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ethical — لعبة الامبوستر</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14101f; --bg2:#0e0b16; --surface:#1d1730; --surface2:#251d3d;
+    --line:#332a4d; --violet:#8b5cf6; --violet-soft:#a78bfa; --magenta:#d946ef;
+    --red:#f43f5e; --text:#ece8f5; --muted:#9a8fb8; --ok:#34d399;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;
+    background:
+      radial-gradient(900px 600px at 80% -10%, rgba(139,92,246,.18), transparent 60%),
+      radial-gradient(700px 500px at 0% 110%, rgba(217,70,239,.12), transparent 55%),
+      var(--bg);
+    color:var(--text); min-height:100vh; overflow-x:hidden;
+  }
+  .particles{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+  .particles span{position:absolute;width:5px;height:5px;border-radius:50%;
+    background:radial-gradient(circle,var(--violet-soft),transparent 70%);
+    opacity:.4;animation:drift linear infinite}
+  @keyframes drift{from{transform:translateY(110vh) scale(.6)}to{transform:translateY(-10vh) scale(1.2)}}
+
+  .wrap{position:relative;z-index:1;max-width:560px;margin:0 auto;padding:26px 18px 56px}
+  .brand{display:flex;flex-direction:column;align-items:center;text-align:center;margin:18px 0 26px}
+  .mark{font-family:"Space Grotesk",sans-serif;font-weight:700;letter-spacing:.18em;font-size:13px;
+    color:var(--violet-soft);text-transform:lowercase;border:1px solid var(--line);
+    padding:6px 14px;border-radius:999px;background:rgba(139,92,246,.06)}
+  .mark::before{content:"// "}
+  h1{font-family:"Cairo",sans-serif;font-weight:900;font-size:clamp(34px,11vw,52px);margin:14px 0 4px;line-height:1;
+    background:linear-gradient(120deg,#fff,var(--violet-soft) 55%,var(--magenta));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{color:var(--muted);font-size:14px;font-weight:500}
+
+  .card{background:linear-gradient(180deg,var(--surface),var(--bg2));border:1px solid var(--line);
+    border-radius:22px;padding:20px;margin-bottom:16px;box-shadow:0 18px 40px -24px rgba(0,0,0,.8)}
+  .label{font-weight:700;font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .label .dot{width:7px;height:7px;border-radius:50%;background:var(--violet);box-shadow:0 0 10px var(--violet)}
+
+  .name-input{display:flex;gap:9px}
+  .name-input input{flex:1;background:var(--surface2);border:1px solid var(--line);border-radius:13px;
+    padding:14px;color:var(--text);font-family:inherit;font-size:16px;outline:none}
+  .name-input input:focus{border-color:var(--violet)}
+  .add-btn{flex:none;width:52px;border-radius:13px;border:none;font-size:26px;font-weight:700;color:#fff;cursor:pointer;
+    background:linear-gradient(120deg,var(--violet),var(--magenta))}
+  .add-btn:active{transform:scale(.94)}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+  .pill{display:flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--line);
+    border-radius:11px;padding:8px 11px;font-size:14px;font-weight:600}
+  .pill b{font-family:"Space Grotesk";color:var(--violet-soft);font-size:12px}
+  .pill .x{cursor:pointer;color:var(--muted);font-weight:700;font-size:17px;line-height:1}
+  .empty{color:var(--muted);font-size:13px;margin-top:11px}
+
+  .chips{display:flex;flex-wrap:wrap;gap:9px}
+  .chip{border:1px solid var(--line);background:var(--surface2);color:var(--muted);padding:10px 14px;
+    border-radius:13px;font-size:14px;font-weight:600;cursor:pointer;transition:.15s;flex:1 1 auto;text-align:center}
+  .chip:active{transform:scale(.96)}
+  .chip.active{color:#fff;border-color:transparent;background:linear-gradient(120deg,var(--violet),var(--magenta));
+    box-shadow:0 8px 22px -10px var(--violet)}
+
+  .toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--muted);font-size:14px;font-weight:500}
+  .switch{width:50px;height:29px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);
+    position:relative;cursor:pointer;transition:.2s;flex:none}
+  .switch i{position:absolute;top:3px;right:3px;width:21px;height:21px;border-radius:50%;background:var(--muted);transition:.2s}
+  .switch.on{background:linear-gradient(120deg,var(--violet),var(--magenta));border-color:transparent}
+  .switch.on i{right:24px;background:#fff}
+
+  .go{width:100%;border:none;border-radius:18px;padding:18px;font-family:"Cairo";font-weight:800;font-size:18px;
+    color:#fff;cursor:pointer;background:linear-gradient(120deg,var(--violet),var(--magenta));
+    box-shadow:0 16px 34px -14px var(--violet);transition:.15s}
+  .go:active{transform:translateY(2px)}
+  .go:disabled{opacity:.4;box-shadow:none}
+  .go.sec{background:var(--surface2);border:1px solid var(--line);box-shadow:none;font-size:16px;padding:15px;color:var(--text)}
+
+  .linkbox{background:var(--surface2);border:1px dashed var(--violet);border-radius:14px;padding:14px;
+    font-size:12px;direction:ltr;text-align:left;word-break:break-all;color:var(--violet-soft);margin:13px 0;max-height:120px;overflow:auto}
+  .hint{color:var(--muted);font-size:13px;line-height:1.7;margin-top:4px}
+  .hint b{color:var(--violet-soft)}
+
+  .steps{counter-reset:s;list-style:none;padding:0;margin:0}
+  .steps li{counter-increment:s;position:relative;padding:8px 34px 8px 0;color:var(--muted);font-size:13.5px;line-height:1.6}
+  .steps li::before{content:counter(s);position:absolute;right:0;top:7px;width:22px;height:22px;border-radius:7px;
+    background:rgba(139,92,246,.15);color:var(--violet-soft);font-family:"Space Grotesk";font-weight:700;font-size:12px;
+    display:flex;align-items:center;justify-content:center}
+
+  /* role view */
+  .role-stage{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 22px;text-align:center}
+  .pick-title{font-family:"Cairo";font-weight:800;font-size:24px;margin-bottom:6px}
+  .pick-sub{color:var(--muted);font-size:14px;margin-bottom:26px}
+  .names-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;width:min(420px,90vw)}
+  .name-btn{padding:18px 12px;border-radius:16px;border:1px solid var(--line);background:linear-gradient(180deg,var(--surface),var(--bg2));
+    color:var(--text);font-family:inherit;font-weight:700;font-size:16px;cursor:pointer;transition:.15s}
+  .name-btn:active{transform:scale(.96);border-color:var(--violet)}
+
+  .seal{width:min(330px,82vw);aspect-ratio:1;border-radius:30px;cursor:pointer;position:relative;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;border:1px solid var(--line);
+    background:linear-gradient(180deg,var(--surface),var(--bg2));box-shadow:0 30px 60px -30px rgba(0,0,0,.9);overflow:hidden}
+  .seal .glow{position:absolute;inset:-40%;background:radial-gradient(circle,rgba(139,92,246,.25),transparent 60%);animation:pulse 3.5s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(.9);opacity:.6}50%{transform:scale(1.1);opacity:1}}
+  .seal svg{width:84px;height:84px;position:relative;z-index:1}
+  .seal .who{position:relative;z-index:1;color:var(--muted);font-size:13px}
+  .seal .tap{position:relative;z-index:1;font-family:"Cairo";font-weight:700;font-size:18px;color:var(--violet-soft)}
+  .seal .sub{position:relative;z-index:1;color:var(--muted);font-size:12px;margin-top:-6px}
+  .revealed{animation:reveal .5s ease}
+  @keyframes reveal{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+  .cat-pill{font-size:13px;color:var(--muted);font-weight:600;background:var(--surface2);border:1px solid var(--line);
+    padding:6px 14px;border-radius:999px;position:relative;z-index:1}
+  .word{font-family:"Cairo";font-weight:900;font-size:clamp(28px,8.5vw,42px);position:relative;z-index:1;padding:0 10px;
+    background:linear-gradient(120deg,#fff,var(--violet-soft));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .big-imp{font-family:"Cairo";font-weight:900;font-size:clamp(28px,8.5vw,42px);color:var(--red);text-shadow:0 0 30px rgba(244,63,94,.5);position:relative;z-index:1}
+  .role-foot{color:var(--muted);font-size:13.5px;line-height:1.7;max-width:330px;margin-top:22px}
+  .ctl{margin-top:16px;display:flex;gap:10px}
+  .ctl button{border:1px solid var(--line);background:var(--surface2);color:var(--muted);padding:11px 18px;
+    border-radius:13px;font-family:inherit;font-weight:600;font-size:14px;cursor:pointer}
+  .imp .seal{border-color:rgba(244,63,94,.5)}
+  .imp .seal .glow{background:radial-gradient(circle,rgba(244,63,94,.3),transparent 60%)}
+  .badlink{color:var(--muted);font-size:15px;line-height:1.8}
+  .badlink a{color:var(--violet-soft)}
+
+  @media (prefers-reduced-motion: reduce){.particles,.seal .glow{display:none}*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="particles" id="particles"></div>
+
+<!-- ===== HOST VIEW ===== -->
+<div class="wrap" id="hostView">
+  <div class="brand">
+    <span class="mark" dir="ltr">ethical</span>
+    <h1>الامبوستر</h1>
+    <div class="tag">رابط واحد للجميع — كل لاعب يدخل على اسمه ويشوف كلمته السرية</div>
+  </div>
+
+  <div class="card">
+    <p class="label"><span class="dot"></span> اكتب أسماء اللاعبين</p>
+    <div class="name-input">
+      <input id="nameInput" placeholder="اكتب الاسم واضغط +" maxlength="20"
+             onkeydown="if(event.key==='Enter')addName()">
+      <button class="add-btn" onclick="addName()">+</button>
+    </div>
+    <div class="pills" id="pills"></div>
+    <div class="empty" id="empty">ضيف ٣ لاعبين على الأقل.</div>
+  </div>
+
+  <div class="card">
+    <p class="label"><span class="dot"></span> اختر التصنيف</p>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="card">
+    <div class="toggle">
+      <span>يعرف الامبوستر اسم التصنيف (يساعده يطنّش)</span>
+      <div class="switch on" id="catSwitch" onclick="this.classList.toggle('on')"><i></i></div>
+    </div>
+  </div>
+
+  <button class="go" id="genBtn" onclick="generate()" disabled>توليد الرابط 🎭</button>
+
+  <div id="result" style="margin-top:18px"></div>
+
+  <div class="card" style="margin-top:18px">
+    <p class="label"><span class="dot"></span> كيف تلعب</p>
+    <ol class="steps">
+      <li>اكتب أسماء كل اللاعبين واختر تصنيف.</li>
+      <li>يطلع لك <b>رابط واحد</b> — انسخه وأرسله في الجروب.</li>
+      <li>كل واحد يفتح الرابط ويضغط على <b>اسمه</b>.</li>
+      <li>الكل يشوف نفس الكلمة… إلا الامبوستر يطلع له إنه هو 🤫</li>
+      <li>تتناقشون وتكتشفون مين اللي ما يعرف الكلمة.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ===== ROLE VIEW ===== -->
+<div class="role-stage" id="roleView" style="display:none"></div>
+
+<script>
+/* ---------- word banks ---------- */
+const CATS = {
+  food:{name:"الأكل 🍔",words:["كبسة","مندي","شاورما","برجر","بيتزا","سوشي","فلافل","حمص","كنافة","بقلاوة","مقلوبة","برياني","دجاج مشوي","سمبوسة","فول","شكشوكة","معكرونة","تاكو","نودلز","آيس كريم","دونات","بطاطس مقلية","مطبق","مرقوق"]},
+  fame:{name:"مشاهير ⭐",words:["كريستيانو رونالدو","ليونيل ميسي","محمد صلاح","نيمار","ليبرون جيمس","تايلور سويفت","دريك","إيمينيم","ويل سميث","توم كروز","ليوناردو دي كابريو","روبرت داوني جونيور","إيلون ماسك","مارك زوكربيرغ","بيل غيتس","ميستر بيست","كيم كارداشيان","رونالدينيو","عمرو دياب","محمد رمضان","عبدالمجيد عبدالله","أحلام","إليسا","نانسي عجرم"]},
+  daily:{name:"أشياء يومية 🪥",words:["جوال","شاحن","نظارة","مفاتيح","محفظة","ساعة","فرشاة أسنان","منشفة","صابون","ملعقة","كوب","صحن","وسادة","بطانية","مكيف","تلفزيون","ريموت","مروحة","مكنسة","مرآة","مشط","مظلة","قلم","كرسي"]},
+  games:{name:"ألعاب 🎮",words:["ماين كرافت","فورتنايت","ببجي","كول أوف ديوتي","فيفا","جي تي إيه","روبلوكس","أمونغ أس","فالورانت","ليق أوف ليجندز","كاندي كراش","سوبر ماريو","زيلدا","بوكيمون","سونيك","تيكن","مورتال كومبات","ستريت فايتر","أبيكس ليجندز","كلاش أوف كلانس","كلاش رويال","فري فاير","بلوت","أونو"]},
+  movies:{name:"أفلام ومسلسلات 🎬",words:["تايتانك","أفاتار","الرجل العنكبوت","باتمان","هاري بوتر","سيد الخواتم","أفنجرز","فروزن","الأسد الملك","لعبة الحبار","بريكنغ باد","البيت الورقي","صراع العروش","سترينجر ثينغز","فريندز","ون بيس","ناروتو","ديث نوت","هجوم العمالقة","الجوكر","إنترستيلر","إنسيبشن","نادي القتال","العراب"]},
+  politics:{name:"شخصيات سياسية 🏛️",words:["نيلسون مانديلا","المهاتما غاندي","ونستون تشرشل","أبراهام لينكولن","جون كينيدي","باراك أوباما","دونالد ترامب","جو بايدن","فلاديمير بوتين","أنغيلا ميركل","إيمانويل ماكرون","الملك سلمان","الملك عبدالعزيز","جمال عبدالناصر","ياسر عرفات","تشي جيفارا","مارتن لوثر كينغ","الملكة إليزابيث","محمد علي جناح","شي جين بينغ"]}
+};
+
+/* ---------- obfuscation (light, not real security) ---------- */
+const KEY="ethical-impostor-2026";
+function xorStr(s){let o="";for(let i=0;i<s.length;i++)o+=String.fromCharCode(s.charCodeAt(i)^KEY.charCodeAt(i%KEY.length));return o;}
+function enc(o){return btoa(unescape(encodeURIComponent(xorStr(JSON.stringify(o))))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');}
+function dec(t){let b=t.replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+='=';return JSON.parse(xorStr(decodeURIComponent(escape(atob(b)))));}
+
+/* ---------- host ---------- */
+let players=[], chosen="random";
+const CAT_KEYS=Object.keys(CATS);
+
+function buildChips(){
+  const c=document.getElementById('chips');
+  const all=[{k:"random",name:"عشوائي 🎲"}].concat(CAT_KEYS.map(k=>({k,name:CATS[k].name})));
+  c.innerHTML="";
+  all.forEach(o=>{const b=document.createElement('button');b.className="chip"+(o.k===chosen?" active":"");
+    b.textContent=o.name;b.onclick=()=>{chosen=o.k;buildChips();};c.appendChild(b);});
+}
+buildChips();
+
+function addName(){
+  const inp=document.getElementById('nameInput');
+  const v=inp.value.trim();
+  if(!v) return;
+  if(players.length>=16){inp.value="";return;}
+  if(players.includes(v)){inp.value="";return;}
+  players.push(v); inp.value=""; inp.focus(); renderPills();
+}
+function removeName(i){players.splice(i,1);renderPills();}
+function renderPills(){
+  const p=document.getElementById('pills');
+  p.innerHTML=players.map((n,i)=>`<span class="pill"><b>${i+1}</b>${n}<span class="x" onclick="removeName(${i})">×</span></span>`).join("");
+  document.getElementById('empty').style.display = players.length>=3 ? "none":"block";
+  document.getElementById('empty').textContent = players.length<3 ? `ضيف ${3-players.length} لاعب على الأقل.` : "";
+  document.getElementById('genBtn').disabled = players.length<3;
+}
+
+function generate(){
+  if(players.length<3) return;
+  const catKey = chosen==="random" ? CAT_KEYS[Math.floor(Math.random()*CAT_KEYS.length)] : chosen;
+  const cat=CATS[catKey];
+  const word=cat.words[Math.floor(Math.random()*cat.words.length)];
+  const imp=Math.floor(Math.random()*players.length);
+  const tc=document.getElementById('catSwitch').classList.contains('on');
+  const token=enc({n:players,c:cat.name,w:word,i:imp,tc});
+  const link=location.href.split('#')[0]+"#g="+token;
+
+  const fileNote = location.protocol==="file:"
+    ? `<p class="hint" style="color:#ffb3c0">⚠️ هذا الرابط يشتغل بس على جهازك لأن الملف مفتوح محلياً. ارفع الموقع على استضافة أول (الشرح تحت) عشان الرابط يصير حقيقي وترسله لأصحابك.</p>`:"";
+
+  document.getElementById('result').innerHTML=`
+    <div class="card">
+      <p class="label"><span class="dot"></span> رابط الجولة جاهز ✅</p>
+      <p class="hint">التصنيف: <b>${cat.name}</b> — أرسل هذا الرابط للجميع. كل واحد يضغط على اسمه. الامبوستر موزّع عشوائياً 🤫</p>
+      <div class="linkbox">${link}</div>
+      ${fileNote}
+      <button class="go" onclick="cp(this,'${link}')">📋 نسخ الرابط</button>
+      <button class="go sec" style="margin-top:10px" onclick="generate()">🔄 جولة جديدة (نفس الأسماء)</button>
+    </div>`;
+  document.getElementById('result').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function cp(btn,txt){navigator.clipboard.writeText(txt).then(()=>{const o=btn.textContent;btn.textContent="تم النسخ ✓";setTimeout(()=>btn.textContent=o,1500);});}
+
+/* ---------- role view ---------- */
+const MASK=`<svg viewBox="0 0 100 100" fill="none"><path d="M50 18c18 0 34 6 38 10 0 22-10 44-38 44S12 50 12 28c4-4 20-10 38-10Z" stroke="#a78bfa" stroke-width="3"/><ellipse cx="34" cy="40" rx="9" ry="7" fill="#a78bfa"/><ellipse cx="66" cy="40" rx="9" ry="7" fill="#a78bfa"/><path d="M40 60c4 4 16 4 20 0" stroke="#a78bfa" stroke-width="3" stroke-linecap="round"/></svg>`;
+let G=null;
+
+function showRole(){
+  const m=location.hash.match(/g=([^&]+)/);
+  const stage=document.getElementById('roleView');
+  document.getElementById('hostView').style.display="none";
+  stage.style.display="flex"; stage.classList.remove('imp');
+  try{ G=dec(m[1]); }catch(e){
+    stage.innerHTML=`<div class="badlink">الرابط غير صالح أو ناقص.<br><a href="${location.href.split('#')[0]}">↩︎ إنشاء جولة جديدة</a></div>`;return;
+  }
+  pickName();
+}
+function pickName(){
+  const stage=document.getElementById('roleView'); stage.classList.remove('imp');
+  stage.innerHTML=`
+    <div class="pick-title">اختر اسمك</div>
+    <div class="pick-sub">اضغط على اسمك عشان تشوف كلمتك السرية</div>
+    <div class="names-grid">
+      ${G.n.map((n,i)=>`<button class="name-btn" onclick="reveal(${i})">${n}</button>`).join("")}
+    </div>`;
+}
+function reveal(idx){
+  const stage=document.getElementById('roleView');
+  const isImp = idx===G.i;
+  if(isImp) stage.classList.add('imp'); else stage.classList.remove('imp');
+  stage.innerHTML=`
+    <div class="seal" id="seal" onclick="flip()">
+      <div class="glow"></div>${MASK}
+      <div class="who">أهلاً ${G.n[idx]}</div>
+      <div class="tap">اضغط لكشف دورك</div>
+      <div class="sub">تأكد ما أحد يطالع شاشتك 👀</div>
+    </div>
+    <div class="role-foot" id="foot"></div>
+    <div class="ctl"><button onclick="pickName()">↩︎ مب أنا</button></div>`;
+  window._imp=isImp;
+}
+function flip(){
+  const seal=document.getElementById('seal'),imp=window._imp;
+  seal.classList.add('revealed');
+  if(imp){
+    seal.innerHTML=`<div class="glow"></div><div class="big-imp">أنت الامبوستر</div>
+      ${G.tc?`<div class="cat-pill">التصنيف: ${G.c}</div>`:''}
+      <div class="tap" style="color:var(--red)">🤫 طنّش وخلّك معاهم</div>`;
+    document.getElementById('foot').textContent="ما عندك الكلمة. اسمع تلميحاتهم وجاوب بشكل يخليهم ما يشكّون فيك. هدفك تطوف من غير ما يكشفونك.";
+  }else{
+    seal.innerHTML=`<div class="glow"></div><div class="cat-pill">${G.c}</div>
+      <div class="word">${G.w}</div><div class="tap" style="font-size:14px">هذي كلمتك السرية</div>`;
+    document.getElementById('foot').textContent="احفظ الكلمة ولا تقولها صريحة. لمّحوا لها بالدور عشان تكتشفون الامبوستر اللي ما يعرفها.";
+  }
+}
+
+/* ---------- particles ---------- */
+(function(){const p=document.getElementById('particles');
+  for(let i=0;i<14;i++){const s=document.createElement('span');
+    s.style.left=Math.random()*100+'%';s.style.animationDuration=(8+Math.random()*10)+'s';
+    s.style.animationDelay=(-Math.random()*12)+'s';s.style.opacity=(.15+Math.random()*.35);p.appendChild(s);}})();
+
+/* ---------- route ---------- */
+if(location.hash.indexOf('g=')>-1) showRole();
+</script>
+</body>
+</html>
