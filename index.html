@@ -104,12 +104,28 @@
   .pin{width:100%;text-align:center;letter-spacing:.5em;font-family:"Space Grotesk";font-size:24px;background:var(--surface2);border:1px solid var(--line);border-radius:13px;padding:14px;color:var(--text);outline:none}
   .pin:focus{border-color:var(--violet)}
   .pinerr{color:#ffb3c0;font-size:13px;text-align:center;min-height:18px;margin:8px 0}
-  .credit{position:fixed;bottom:10px;left:0;right:0;text-align:center;z-index:2;
-    pointer-events:none;font-size:11.5px;color:var(--muted);opacity:.8;
-    font-weight:600;letter-spacing:.02em}
-  .credit b{font-family:"Cairo";font-weight:800;
-    background:linear-gradient(120deg,var(--violet-soft),var(--magenta));
-    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .made-by{margin-top:14px;display:inline-flex;align-items:center;gap:8px;
+    padding:9px 20px;border-radius:999px;border:1px solid rgba(167,139,250,.55);
+    background:linear-gradient(180deg,rgba(139,92,246,.16),rgba(217,70,239,.08));
+    font-size:14px;font-weight:600;color:var(--muted);
+    box-shadow:0 0 22px -4px rgba(139,92,246,.55);animation:creditGlow 2.6s ease-in-out infinite}
+  .made-by b{font-family:"Cairo";font-weight:900;font-size:19px;
+    background:linear-gradient(120deg,var(--violet-soft),#fff,var(--magenta),var(--violet-soft));
+    background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:shimmer 3s linear infinite}
+  @keyframes shimmer{from{background-position:0% 0}to{background-position:250% 0}}
+  @keyframes creditGlow{0%,100%{box-shadow:0 0 16px -6px rgba(139,92,246,.45)}50%{box-shadow:0 0 30px -4px rgba(217,70,239,.7)}}
+  .credit{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:2;
+    pointer-events:none;white-space:nowrap;display:flex;align-items:center;gap:7px;
+    padding:8px 18px;border-radius:999px;border:1px solid rgba(167,139,250,.5);
+    background:linear-gradient(180deg,rgba(29,23,48,.92),rgba(14,11,22,.92));
+    font-size:12.5px;font-weight:600;color:var(--muted);
+    animation:creditGlow 2.6s ease-in-out infinite}
+  .credit b{font-family:"Cairo";font-weight:900;font-size:16px;
+    background:linear-gradient(120deg,var(--violet-soft),#fff,var(--magenta),var(--violet-soft));
+    background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:shimmer 3s linear infinite}
+  @media (prefers-reduced-motion: reduce){.made-by,.credit{animation:none}.made-by b,.credit b{animation:none}}
   @media (prefers-reduced-motion: reduce){.particles,.seal .glow{display:none}*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -238,6 +254,7 @@ function renderHost(){
     <div class="brand">
       <span class="mark" dir="ltr">ethical</span>
       <h1>الامبوستر</h1>
+      <div class="made-by">صنعها <b>صهيب</b> ✦</div>
     </div>
     ${liveBlock}
     <div class="card">
