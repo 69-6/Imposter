@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>kim — لعبة الامبوستر</title>
+<title>ethical — لعبة الامبوستر</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
@@ -104,7 +104,36 @@
   .pin{width:100%;text-align:center;letter-spacing:.5em;font-family:"Space Grotesk";font-size:24px;background:var(--surface2);border:1px solid var(--line);border-radius:13px;padding:14px;color:var(--text);outline:none}
   .pin:focus{border-color:var(--violet)}
   .pinerr{color:#ffb3c0;font-size:13px;text-align:center;min-height:18px;margin:8px 0}
-  @media (prefers-reduced-motion: reduce){.particles,.seal .glow{display:none}*{animation:none!important;transition:none!important}}
+  /* voting */
+  .vote-panel{margin-top:16px;width:min(360px,92vw);text-align:center}
+  .vote-title{font-weight:700;font-size:14px;color:var(--muted);margin-bottom:10px}
+  .vote-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:8px}
+  .vote-btn{border:1px solid var(--line);background:var(--surface2);color:var(--text);padding:12px;border-radius:13px;font-family:inherit;font-weight:700;font-size:15px;cursor:pointer;transition:.15s}
+  .vote-btn:active{transform:scale(.95);border-color:var(--violet)}
+  .vote-result{background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.4);border-radius:16px;padding:16px;margin-top:10px}
+  .vote-result .rname{font-family:"Cairo";font-weight:900;font-size:26px;color:var(--red);text-shadow:0 0 20px rgba(244,63,94,.4)}
+  .vote-wait{color:var(--muted);font-size:12.5px;margin-top:6px}
+  /* leaderboard */
+  .lb-card{background:linear-gradient(180deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin-top:14px;width:min(360px,92vw)}
+  .lb-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .lb-row:last-child{border-bottom:none}
+  .lb-medal{font-size:22px;width:28px;text-align:center;animation:medalPop .5s ease forwards;opacity:0}
+  @keyframes medalPop{from{transform:scale(0) rotate(-30deg);opacity:0}to{transform:scale(1) rotate(0deg);opacity:1}}
+  .lb-name{flex:1;font-weight:700;font-size:14px}
+  .lb-name.gold{color:var(--gold);text-shadow:0 0 10px rgba(250,204,21,.4)}
+  .lb-name.silver{color:#c0c0c0}
+  .lb-name.bronze{color:#cd7f32}
+  .lb-pts{font-family:"Space Grotesk";font-weight:700;font-size:15px;color:var(--violet-soft)}
+  .score-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .score-row:last-child{border-bottom:none}
+  .score-name{flex:1;font-weight:600;font-size:14px}
+  .score-name.gold{color:var(--gold)}
+  .score-name.silver{color:#c0c0c0}
+  .score-name.bronze{color:#cd7f32}
+  .score-ctrl{display:flex;align-items:center;gap:8px}
+  .score-ctrl button{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--text);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .score-ctrl span{font-family:"Space Grotesk";font-weight:700;font-size:16px;min-width:28px;text-align:center}
+    @media (prefers-reduced-motion: reduce){.particles,.seal .glow{display:none}*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -117,7 +146,7 @@
 /* ============ WORD BANKS (100+ each) ============ */
 const CATS = {
   food:{name:"الأكل 🍔",words:["كبسة","مندي","مظبي","برياني","مقلوبة","مجبوس","صيادية","فول","تميس","شاورما","فلافل","حمص","متبل","تبولة","فتوش","كبة","ورق عنب","مجدرة","ملوخية","فتة","كشري","طعمية","بامية","مسقعة","صفيحة","منقوشة","لحم بعجين","شيش طاووق","كفتة","مشاوي","برجر","بيتزا","باستا","لازانيا","سباغيتي","ريزوتو","سوشي","رامن","نودلز","تاكو","بوريتو","ناتشوز","كاري","بان كيك","وافل","كرواسون","دونات","كب كيك","تشيز كيك","براوني","كوكيز","آيس كريم","ميلك شيك","سموذي","عصير برتقال","قهوة","كابتشينو","لاتيه","شاي","كركديه","عصير مانجو","بطاطس مقلية","بطاطس مهروسة","رز بخاري","خبز","توست","ساندويتش","كلوب ساندويتش","هوت دوغ","سلطة","شوربة","شوربة عدس","شكشوكة","بيض مقلي","عجة","أومليت","جبن","زبادي","لبنة","عسل","مربى","زيتون","مخلل","تمر","بقلاوة","كنافة","بسبوسة","معمول","لقيمات","قطايف","أم علي","مهلبية","كاسترد","جلي","شوكولاتة","بسكويت","شيبس","فشار","مكسرات","عصيدة","هريسة"]},
-  fame:{name:"مشاهير ⭐",words:["كريستيانو رونالدو","ليونيل ميسي","نيمار","كيليان مبابي","محمد صلاح","كريم بنزيما","رونالدينيو","زين الدين زيدان","ديفيد بيكهام","ليبرون جيمس","مايكل جوردن","كوبي براينت","ستيفن كاري","شاكيل أونيل","أوسين بولت","مايك تايسون","محمد علي كلاي","فلويد مايويذر","كونور ماكغريغور","روجر فيدرر","رفائيل نادال","نوفاك ديوكوفيتش","سيرينا ويليامز","تايغر وودز","توم برادي","تايلور سويفت","بيونسيه","ريهانا","أديل","إد شيران","جاستن بيبر","أريانا غراندي","بيلي آيليش","دريك","إيمينيم","كانييه ويست","ذا ويكند","برونو مارس","ليدي غاغا","مادونا","مايكل جاكسون","إلفيس بريسلي","فريدي ميركوري","توم كروز","براد بيت","أنجلينا جولي","ليوناردو دي كابريو","جوني ديب","روبرت داوني جونيور","كريس إيفانز","كريس همسوورث","سكارليت جوهانسون","دواين جونسون","فين ديزل","جاكي شان","جيسون ستاثام","كيانو ريفز","ويل سميث","دينزل واشنطن","مورغان فريمان","آل باتشينو","روبرت دي نيرو","جوليا روبرتس","إيما واتسون","إيما ستون","جينيفر لورانس","أوبرا وينفري","إيلون ماسك","جيف بيزوس","بيل غيتس","مارك زوكربيرغ","ستيف جوبز","وارن بافيت","ميستر بيست","كيم كارداشيان","كايلي جينر","عمرو دياب","تامر حسني","محمد رمضان","عبدالمجيد عبدالله","راشد الماجد","ماجد المهندس","حسين الجسمي","عبادي الجوهر","طلال مداح","محمد عبده","أم كلثوم","فيروز","أحلام","إليسا","نانسي عجرم","هيفاء وهبي","أصالة","شيرين عبدالوهاب","نوال الكويتية","عمرو خالد","أحمد الشقيري","فهد البتيري","تركي آل الشيخ","عبدالله الفرج"]},
+  fame:{name:"مشاهير ⭐",words:["كريستيانو رونالدو","ليونيل ميسي","نيمار","كيليان مبابي","محمد صلاح","كريم بنزيما","رونالدينيو","زين الدين زيدان","ديفيد بيكهام","ليبرون جيمس","مايكل جوردن","كوبي براينت","ستيفن كاري","شاكيل أونيل","أوسين بولت","مايك تايسون","محمد علي كلاي","فلويد مايويذر","كونور ماكغريغر","روجر فيدرر","رفائيل نادال","نوفاك ديوكوفيتش","سيرينا ويليامز","تايغر وودز","توم برادي","تايلور سويفت","بيونسيه","ريهانا","أديل","إد شيران","جاستن بيبر","أريانا غراندي","بيلي آيليش","دريك","إيمينيم","كانييه ويست","ذا ويكند","برونو مارس","ليدي غاغا","مادونا","مايكل جاكسون","إلفيس بريسلي","فريدي ميركوري","توم كروز","براد بيت","أنجلينا جولي","ليوناردو دي كابريو","جوني ديب","روبرت داوني جونيور","كريس إيفانز","كريس همسوورث","سكارليت جوهانسون","دواين جونسون","فين ديزل","جاكي شان","جيسون ستاثام","كيانو ريفز","ويل سميث","دينزل واشنطن","مورغان فريمان","آل باتشينو","روبرت دي نيرو","جوليا روبرتس","إيما واتسون","إيما ستون","جينيفر لورانس","أوبرا وينفري","إيلون ماسك","جيف بيزوس","بيل غيتس","مارك زوكربيرغ","ستيف جوبز","وارن بافيت","ميستر بيست","كيم كارداشيان","كايلي جينر","عمرو دياب","تامر حسني","محمد رمضان","عبدالمجيد عبدالله","راشد الماجد","ماجد المهندس","حسين الجسمي","عبادي الجوهر","طلال مداح","محمد عبده","أم كلثوم","فيروز","أحلام","إليسا","نانسي عجرم","هيفاء وهبي","أصالة","شيرين عبدالوهاب","نوال الكويتية","عمرو خالد","أحمد الشقيري","فهد البتيري","تركي آل الشيخ","عبدالله الفرج"]},
   daily:{name:"أشياء يومية 🪥",words:["جوال","شاحن","سماعات","لابتوب","تابلت","كمبيوتر","ماوس","كيبورد","شاشة","ريموت","تلفزيون","ساعة","ساعة يد","نظارة","نظارة شمسية","محفظة","مفاتيح","حقيبة","شنطة ظهر","مظلة","قلم","قلم رصاص","دفتر","كتاب","ممحاة","مسطرة","مقص","دباسة","صمغ","ورق","مغلف","فرشاة أسنان","معجون أسنان","صابون","شامبو","منشفة","مشط","فرشاة شعر","مرآة","مكياج","عطر","كريم","مناديل","فوطة","سكين","شوكة","ملعقة","صحن","طبق","كوب","فنجان","كأس","إبريق","قدر","مقلاة","غلاية","خلاط","ميكروويف","فرن","ثلاجة","فريزر","غسالة","مكنسة","مكنسة كهربائية","مكواة","مكيف","مروحة","دفاية","مصباح","لمبة","شمعة","ساعة منبه","وسادة","مخدة","بطانية","لحاف","سرير","ملاءة","كرسي","طاولة","مكتب","خزانة","رف","باب","نافذة","ستارة","سجادة","مقبض","مفتاح كهرباء","قابس","سلك","بطارية","علبة","صندوق","كيس","زجاجة","علاقة","طفاية حريق","مظروف","دبوس","خيط","إبرة","حبل","سلم","مطرقة","مفك"]},
   movies:{name:"أفلام ومسلسلات 🎬",words:["طاش ما طاش", "العاصوف", "رشاش", "مخرج 7", "شباب البومب", "سيلفي", "غشمشم", "طروب", "أم البنات", "بيت الطين", "سعدون", "الخطّافين", "العميل", "5 نجوم", "باب الحارة", "الهيبة", "الاختيار", "رأس غليص", "الفرسان", "شمس المعارف", "حد الطار", "المرهقون", "سطّار", "مطلوب رجال", "الهامور", "نورة", "صفر", "الممر", "كيرة والجن", "تراب الماس", "ولاد رزق", "البدلة", "الفيل الأزرق", "اشتباك", "عسل أسود", "الجزيرة", "إبراهيم الأبيض", "الرسالة", "عمر المختار", "وجدة", "بركة يقابل بركة", "الإرهاب والكباب", "عمارة يعقوبيان", "الكيت كات", "الناظر", "اللمبي", "عسكر في المعسكر", "حلاوة روح", "Titanic", "Avatar", "Spider-Man", "Batman", "Superman", "Iron Man", "The Avengers", "Joker", "The Dark Knight", "Inception", "Interstellar", "Oppenheimer", "The Matrix", "John Wick", "Forrest Gump", "The Godfather", "The Shawshank Redemption", "Fight Club", "Parasite", "Harry Potter", "The Lord of the Rings", "The Hobbit", "Pirates of the Caribbean", "Indiana Jones", "James Bond", "Mission Impossible", "Fast and Furious", "Transformers", "Jurassic Park", "Godzilla", "Star Wars", "Back to the Future", "Terminator", "Frozen", "The Lion King", "Aladdin", "Toy Story", "Finding Nemo", "Shrek", "Kung Fu Panda", "Minions", "Zootopia", "Inside Out", "Moana", "Encanto", "Squid Game", "Money Heist", "Game of Thrones", "House of the Dragon", "Stranger Things", "Breaking Bad", "The Walking Dead", "Wednesday", "The Witcher", "The Crown", "Peaky Blinders", "Friends", "The Office", "How I Met Your Mother", "The Big Bang Theory", "Prison Break", "Dark", "Chernobyl", "One Piece", "Naruto", "Dragon Ball", "Attack on Titan", "Death Note", "Demon Slayer", "Jujutsu Kaisen", "SpongeBob", "Tom and Jerry"]},
   politics:{name:"شخصيات سياسية 🏛️",words:["الملك سلمان","الملك عبدالعزيز","الملك فهد","الملك عبدالله","الملك خالد","الملك فيصل","الشيخ زايد","الشيخ صباح","الملك حسين","الملك عبدالله الثاني","الملك محمد السادس","الحبيب بورقيبة","جمال عبدالناصر","أنور السادات","حسني مبارك","ياسر عرفات","صدام حسين","معمر القذافي","حافظ الأسد","بشار الأسد","رجب طيب أردوغان","مصطفى كمال أتاتورك","الخميني","باراك أوباما","جو بايدن","دونالد ترامب","جورج بوش","جورج بوش الأب","بيل كلينتون","رونالد ريغان","جون كينيدي","أبراهام لينكولن","جورج واشنطن","فرانكلين روزفلت","ريتشارد نيكسون","جيمي كارتر","هيلاري كلينتون","كامالا هاريس","بيرني ساندرز","جون ماكين","فلاديمير بوتين","ميخائيل غورباتشوف","جوزيف ستالين","فلاديمير لينين","نيكيتا خروتشوف","أنغيلا ميركل","أولاف شولتس","إيمانويل ماكرون","نيكولا ساركوزي","شارل ديغول","نابليون بونابرت","ونستون تشرشل","مارغريت تاتشر","توني بلير","غوردون براون","ديفيد كاميرون","بوريس جونسون","ريشي سوناك","الملكة إليزابيث","الملك تشارلز","المهاتما غاندي","جواهر لال نهرو","إنديرا غاندي","نريندرا مودي","محمد علي جناح","بنازير بوتو","عمران خان","نيلسون مانديلا","كوامي نكروما","روبرت موغابي","مارتن لوثر كينغ","مالكوم إكس","تشي جيفارا","فيدل كاسترو","هوغو تشافيز","سيمون بوليفار","لولا دا سيلفا","إيفا بيرون","شي جين بينغ","ماو تسي تونغ","دينغ شياو بينغ","صن يات سن","كيم جونغ أون","كيم إيل سونغ","شينزو آبي","نلسون مانديلا","غولدا مائير","بنيامين نتنياهو","يتسحاق رابين","كوفي عنان","بطرس غالي","بان كي مون","أنطونيو غوتيريش","ألكسندر الأكبر","يوليوس قيصر","كليوباترا","صلاح الدين الأيوبي","هارون الرشيد","تشرشل","دي غول","ليندون جونسون"]},
@@ -166,7 +195,7 @@ let toastT;function toast(m){const t=$('toast');t.textContent=m;t.classList.add(
 function shareLink(code){return location.href.split('#')[0]+'#room='+code;}
 
 /* ============ HOST ============ */
-let H={players:[],catKey:"random",impCount:1,tellCat:true,cat:"",word:"",imps:[],pins:{},v:0,ts:0};
+let H={players:[],catKey:"random",impCount:1,tellCat:true,cat:"",word:"",imps:[],pins:{},scores:{},votes:{},voteRound:0,v:0,ts:0};
 let roomCode=null, pushTimer=null;
 let myName=null, myRevealed=false, hostPinStage=null;
 function esc(s){return (''+s).replace(/'/g,"\\'");}
@@ -220,6 +249,11 @@ function renderHost(){
       <button class="go" onclick="newRound()">🔄 كلمة جديدة (جولة جديدة)</button>
     </div>
     <div class="card">
+      <p class="label"><span class="dot"></span> لوحة النقاط</p>
+      <p class="hint" style="margin-bottom:12px">عدّل النقاط يدوياً بعد كل جولة.</p>
+      ${renderLB(H.scores||{},H.players,true)}
+    </div>
+    <div class="card">
       <p class="label"><span class="dot"></span> رابط الغرفة (ثابت — أرسله مرة وحدة)</p>
       <p class="hint">كل اللاعبين يستخدمون <b>نفس الرابط</b>. أي تغيير تسويه يوصلهم لما يضغطون <b>تحديث</b> 🔄</p>
       <div class="linkbox">${shareLink(roomCode)}</div>
@@ -229,7 +263,7 @@ function renderHost(){
 
   $('hostView').innerHTML=`
     <div class="brand">
-      <span class="mark" dir="ltr">kim</span>
+      <span class="mark" dir="ltr">ethical</span>
       <h1>الامبوستر</h1>
     </div>
     ${liveBlock}
@@ -275,12 +309,43 @@ function addName(){const inp=$('nameInput');const v=(inp.value||'').trim();if(!v
 function rmName(i){const n=H.players[i];H.players.splice(i,1);if(H.imps.includes(n)){H.imps=H.imps.filter(x=>x!==n);const pool=H.players.filter(p=>!H.imps.includes(p));if(H.imps.length<H.impCount&&pool.length){H.imps.push(pool[rndInt(pool.length)]);}}renderHost();if(roomCode)pushSoon();}
 function setCat(k){H.catKey=k;renderHost();if(roomCode)pushSoon();}
 function setImp(d){const maxImp=Math.max(1,H.players.length-1);H.impCount=Math.min(maxImp,Math.max(1,H.impCount+d));renderHost();if(roomCode)pushSoon();}
-function pickRound(){const ck=H.catKey==='random'?CAT_KEYS[rndInt(CAT_KEYS.length)]:H.catKey;H.cat=CATS[ck].name;H.word=CATS[ck].words[rndInt(CATS[ck].words.length)];H.imps=shuffle(H.players).slice(0,Math.min(H.impCount,H.players.length-1||1));H.v=(H.v||0)+1;}
+function pickRound(){const ck=H.catKey==='random'?CAT_KEYS[rndInt(CAT_KEYS.length)]:H.catKey;H.cat=CATS[ck].name;H.word=CATS[ck].words[rndInt(CATS[ck].words.length)];H.imps=shuffle(H.players).slice(0,Math.min(H.impCount,H.players.length-1||1));H.v=(H.v||0)+1;H.votes={};H.voteRound=H.v;}
 function createRoom(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}roomCode=rndCode();pickRound();myRevealed=false;location.hash='host='+roomCode;pushTo(roomCode,H);renderHost();toast('تم إنشاء الغرفة ✅');}
 function newRound(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}pickRound();myRevealed=false;pushTo(roomCode,H);renderHost();toast('كلمة جديدة 🔄');}
 async function resumeHost(code){roomCode=code;const s=await pullFrom(code);if(s){H=Object.assign(H,s);}renderHost();}
 function cp(t){navigator.clipboard.writeText(t).then(()=>toast('تم نسخ الرابط ✓'));}
-function cpMsg(code){const link=shareLink(code);const msg=`🎭 لعبة الامبوستر — kim\nافتحوا الرابط واضغطوا على أسمائكم 👇\n${link}`;navigator.clipboard.writeText(msg).then(()=>toast('تم نسخ الرسالة ✓'));}
+function cpMsg(code){const link=shareLink(code);const msg=`🎭 لعبة الامبوستر — ethical\nافتحوا الرابط واضغطوا على أسمائكم 👇\n${link}`;navigator.clipboard.writeText(msg).then(()=>toast('تم نسخ الرسالة ✓'));}
+
+/* ── Leaderboard helpers ── */
+const MEDALS=['🥇','🥈','🥉'];
+const MEDAL_COLOR=['gold','silver','bronze'];
+function renderLB(scores,players,editable){
+  if(!players||!players.length) return '';
+  const sorted=[...players].sort((a,b)=>(scores[b]||0)-(scores[a]||0));
+  if(editable){
+    return sorted.map((n,i)=>`
+      <div class="score-row">
+        <div class="lb-medal" style="animation-delay:${i*0.08}s">${MEDALS[i]||''}</div>
+        <div class="score-name ${MEDAL_COLOR[i]||''}">${n}</div>
+        <div class="score-ctrl">
+          <button onclick="addScore('${esc(n)}',-1)">−</button>
+          <span>${scores[n]||0}</span>
+          <button onclick="addScore('${esc(n)}',1)">+</button>
+        </div>
+      </div>`).join('');
+  }
+  return `<div class="lb-card">`+sorted.map((n,i)=>`
+    <div class="lb-row">
+      <div class="lb-medal" style="animation-delay:${i*0.08}s">${MEDALS[i]||''}</div>
+      <div class="lb-name ${MEDAL_COLOR[i]||''}">${n}</div>
+      <div class="lb-pts">${scores[n]||0}</div>
+    </div>`).join('')+`</div>`;
+}
+function addScore(name,delta){
+  H.scores=H.scores||{};
+  H.scores[name]=Math.max(0,(H.scores[name]||0)+delta);
+  pushSoon();renderHost();
+}
 
 /* ============ PLAYER ============ */
 const MASK=`<svg viewBox="0 0 100 100" fill="none"><path d="M50 18c18 0 34 6 38 10 0 22-10 44-38 44S12 50 12 28c4-4 20-10 38-10Z" stroke="#a78bfa" stroke-width="3"/><ellipse cx="34" cy="40" rx="9" ry="7" fill="#a78bfa"/><ellipse cx="66" cy="40" rx="9" ry="7" fill="#a78bfa"/><path d="M40 60c4 4 16 4 20 0" stroke="#a78bfa" stroke-width="3" stroke-linecap="round"/></svg>`;
@@ -299,7 +364,10 @@ async function refresh(first){
   if(!s){ if(first)$('roleView').innerHTML=`<div class="badlink">بانتظار الهوست… تأكد إنه أنشأ الغرفة.<br><br><button class="go" style="max-width:240px" onclick="refresh(true)">🔄 تحديث</button></div>`; return; }
   if(pinStage){ S=s; lastV=s.v; return; } // لا نقاطع كتابة الرمز
   const newRoundFlag = (s.v!==lastV);
+  const prevTotalVotes=S?Object.keys(S.votes||{}).length:0;
   S=s; lastV=s.v;
+  const nowTotalVotes=Object.keys(S.votes||{}).length;
+  if(!newRoundFlag && revealed && nowTotalVotes>prevTotalVotes && nowTotalVotes>=(S.players||[]).length) toast('✅ الكل صوّت — شوف الامبوستر!');
   if(picked && !S.players.includes(picked)){ verified=false; renderRole(true); return; }
   if(picked && verified){ renderRole(false); if(newRoundFlag && revealed){flashSeal();toast('🔄 الكلمة تحدّثت');} }
   else renderPicker();
@@ -386,14 +454,56 @@ function renderRole(removed){
 function flip(){revealed=true;drawReveal();}
 function drawReveal(){
   const imp=S.imps.includes(picked);
-  const html = imp
+  const sealHtml = imp
     ? `<div class="glow"></div><div class="big-imp">أنت الامبوستر</div>${S.tellCat?`<div class="cat-pill">التصنيف: ${S.cat}</div>`:''}<div class="tap" style="color:var(--red)">🤫 طنّش وخلّك معاهم</div>`
     : `<div class="glow"></div><div class="cat-pill">${S.cat}</div><div class="word" dir="auto">${S.word}</div><div class="tap" style="font-size:14px">هذي كلمتك السرية</div>`;
-  $('roleView').innerHTML=`<div class="seal revealed" id="seal">${html}</div>
+  // voting
+  const votes=S.votes||{};
+  const totalVotes=Object.keys(votes).length;
+  const allVoted=S.players&&totalVotes>=S.players.length;
+  const myVote=votes[picked];
+  let voteHtml='';
+  if(allVoted){
+    const tally={};
+    Object.values(votes).forEach(v=>{tally[v]=(tally[v]||0)+1;});
+    const topVote=Object.entries(tally).sort((a,b)=>b[1]-a[1])[0];
+    voteHtml=`<div class="vote-panel">
+      <div class="vote-result">
+        <div style="font-size:13px;margin-bottom:6px">🎭 الامبوستر الحقيقي</div>
+        <div class="rname">${S.imps.join('، ')}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">أكثر صوت: ${topVote?topVote[0]+' ('+topVote[1]+'✓)':''}</div>
+      </div>
+    </div>`;
+  } else if(myVote){
+    voteHtml=`<div class="vote-panel">
+      <div class="vote-title">صوّتك: <b style="color:var(--violet-soft)">${myVote}</b></div>
+      <div class="vote-wait">⏳ بانتظار ${S.players.length-totalVotes} شخص…</div>
+    </div>`;
+  } else {
+    const others=S.players.filter(n=>n!==picked);
+    voteHtml=`<div class="vote-panel">
+      <div class="vote-title">🗳️ من تعتقد إنه الامبوستر؟</div>
+      <div class="vote-grid">${others.map(n=>`<button class="vote-btn" onclick="castVote('${esc(n)}')">${n}</button>`).join('')}</div>
+      <div class="vote-wait">${totalVotes} / ${S.players.length} صوتوا</div>
+    </div>`;
+  }
+  $('roleView').innerHTML=`<div class="seal revealed" id="seal">${sealHtml}</div>
     <div class="role-foot">${imp?'ما عندك الكلمة. اسمع تلميحاتهم وجاوب بشكل يخليهم ما يشكّون فيك.':'احفظ الكلمة ولا تقولها صريحة. لمّحوا لها بالدور.'}</div>
+    ${voteHtml}
+    ${renderLB(S.scores||{},S.players||[],false)}
     <div class="ctl"><button class="upd" onclick="refresh(false)">🔄 تحديث</button>
     <button onclick="picked=null;verified=false;revealed=false;renderPicker()">↩︎ مب أنا</button></div>`;
   $('roleView').classList.toggle('imp',imp);
+}
+async function castVote(name){
+  const latest=(await pullFrom(playerCode))||S;
+  latest.votes=latest.votes||{};
+  if(latest.votes[picked]) return; // already voted
+  latest.votes[picked]=name;
+  await pushTo(playerCode,latest);
+  S=latest;
+  if(revealed) drawReveal(); else renderRole(false);
+  toast('تم تسجيل صوتك ✓');
 }
 function flashSeal(){const s=$('seal');if(s){s.classList.remove('flash');void s.offsetWidth;s.classList.add('flash');}}
 
