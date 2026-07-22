@@ -127,6 +127,17 @@
   .vwon-badge{margin-top:8px;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.3);border-radius:10px;padding:6px 12px;font-size:13px;font-weight:700;color:var(--ok)}
   .vlost-badge{margin-top:8px;background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.2);border-radius:10px;padding:6px 12px;font-size:13px;font-weight:600;color:#ffb3c0}
   .vwinners{margin-top:8px;font-size:13px;font-weight:700;color:var(--ok)}
+  /* imp guess */
+  .imp-guess-box{width:min(340px,90vw);margin:14px auto 0;background:var(--surface2);border:1px solid var(--line);border-radius:16px;padding:14px}
+  .ig-label{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:10px}
+  .ig-row{display:flex;gap:9px}
+  .ig-input{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:11px;padding:11px;color:var(--text);font-family:inherit;font-size:15px;outline:none}
+  .ig-input:focus{border-color:var(--violet)}
+  .ig-btn{flex:none;border:none;border-radius:11px;padding:11px 16px;background:linear-gradient(120deg,var(--violet),var(--magenta));color:#fff;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer}
+  .ig-warn{font-size:11px;color:var(--muted);margin-top:7px;text-align:center}
+  .ig-result{border-radius:11px;padding:12px;font-weight:700;font-size:15px;text-align:center}
+  .ig-result.correct{background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35);color:var(--ok)}
+  .ig-result.wrong{background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.3);color:#ffb3c0}
   /* leaderboard */
   .lb-card{background:linear-gradient(180deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin-top:14px;width:min(360px,92vw)}
   .lb-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
@@ -209,7 +220,7 @@ let toastT;function toast(m){const t=$('toast');t.textContent=m;t.classList.add(
 function shareLink(code){return location.href.split('#')[0]+'#room='+code;}
 
 /* ============ HOST ============ */
-let H={players:[],catKey:"random",impCount:1,tellCat:true,cat:"",word:"",imps:[],pins:{},scores:{},votes:{},voteRound:0,scoredRound:-1,v:0,ts:0};
+let H={players:[],catKey:"random",impCount:1,tellCat:true,impCanGuess:false,cat:"",word:"",imps:[],pins:{},scores:{},votes:{},impGuesses:{},voteRound:0,scoredRound:-1,v:0,ts:0};
 let roomCode=null, pushTimer=null;
 let myName=null, myRevealed=false, hostPinStage=null;
 function esc(s){return (''+s).replace(/'/g,"\\'");}
@@ -306,6 +317,11 @@ function renderHost(){
     <div class="card">
       <div class="toggle"><span>يعرف الامبوستر اسم التصنيف</span>
       <div class="switch ${H.tellCat?'on':''}" onclick="H.tellCat=!H.tellCat;this.classList.toggle('on');if(roomCode)pushSoon();"><i></i></div></div>
+      <div style="height:10px"></div>
+      <div class="toggle">
+        <span>الامبوستر يقدر يخمّن الكلمة (مرة وحدة — نقطة إن أصاب)</span>
+        <div class="switch ${H.impCanGuess?'on':''}" onclick="H.impCanGuess=!H.impCanGuess;this.classList.toggle('on');if(roomCode)pushSoon();"><i></i></div>
+      </div>
     </div>
     ${!created?`<button class="go" id="createBtn" ${H.players.length<3?'disabled':''} onclick="createRoom()">🎭 أنشئ الغرفة وولّد الكلمة</button>`:''}
     <div class="card" style="margin-top:18px">
@@ -323,7 +339,7 @@ function addName(){const inp=$('nameInput');const v=(inp.value||'').trim();if(!v
 function rmName(i){const n=H.players[i];H.players.splice(i,1);if(H.imps.includes(n)){H.imps=H.imps.filter(x=>x!==n);const pool=H.players.filter(p=>!H.imps.includes(p));if(H.imps.length<H.impCount&&pool.length){H.imps.push(pool[rndInt(pool.length)]);}}renderHost();if(roomCode)pushSoon();}
 function setCat(k){H.catKey=k;renderHost();if(roomCode)pushSoon();}
 function setImp(d){const maxImp=Math.max(1,H.players.length-1);H.impCount=Math.min(maxImp,Math.max(1,H.impCount+d));renderHost();if(roomCode)pushSoon();}
-function pickRound(){const ck=H.catKey==='random'?CAT_KEYS[rndInt(CAT_KEYS.length)]:H.catKey;H.cat=CATS[ck].name;H.word=CATS[ck].words[rndInt(CATS[ck].words.length)];H.imps=shuffle(H.players).slice(0,Math.min(H.impCount,H.players.length-1||1));H.v=(H.v||0)+1;H.votes={};H.voteRound=H.v;}
+function pickRound(){const ck=H.catKey==='random'?CAT_KEYS[rndInt(CAT_KEYS.length)]:H.catKey;H.cat=CATS[ck].name;H.word=CATS[ck].words[rndInt(CATS[ck].words.length)];H.imps=shuffle(H.players).slice(0,Math.min(H.impCount,H.players.length-1||1));H.v=(H.v||0)+1;H.votes={};H.voteRound=H.v;H.impGuesses={};}
 function createRoom(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}roomCode=rndCode();pickRound();myRevealed=false;location.hash='host='+roomCode;pushTo(roomCode,H);renderHost();toast('تم إنشاء الغرفة ✅');}
 function newRound(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}pickRound();myRevealed=false;pushTo(roomCode,H);renderHost();toast('كلمة جديدة 🔄');}
 async function resumeHost(code){roomCode=code;const s=await pullFrom(code);if(s){H=Object.assign(H,s);}renderHost();}
@@ -471,6 +487,26 @@ function drawReveal(){
   const sealHtml = imp
     ? `<div class="glow"></div><div class="big-imp">أنت الامبوستر</div>${S.tellCat?`<div class="cat-pill">التصنيف: ${S.cat}</div>`:''}<div class="tap" style="color:var(--red)">🤫 طنّش وخلّك معاهم</div>`
     : `<div class="glow"></div><div class="cat-pill">${S.cat}</div><div class="word" dir="auto">${S.word}</div><div class="tap" style="font-size:14px">هذي كلمتك السرية</div>`;
+  // impostor guess block (only if feature enabled)
+  const impGuesses=S.impGuesses||{};
+  const myGuessResult=impGuesses[picked]; // undefined | 'correct' | 'wrong'
+  let impGuessHtml='';
+  if(imp && S.impCanGuess){
+    if(myGuessResult==='correct'){
+      impGuessHtml=`<div class="imp-guess-box"><div class="ig-result correct">✅ أصبت الكلمة! +1 نقطة</div></div>`;
+    } else if(myGuessResult==='wrong'){
+      impGuessHtml=`<div class="imp-guess-box"><div class="ig-result wrong">❌ ما أصبت — فرصتك انتهت</div></div>`;
+    } else {
+      impGuessHtml=`<div class="imp-guess-box">
+        <div class="ig-label">💡 تجرّب تخمّن الكلمة؟ (مرة وحدة)</div>
+        <div class="ig-row">
+          <input id="impGuessInput" class="ig-input" placeholder="اكتب الكلمة هنا…" maxlength="40" onkeydown="if(event.key==='Enter')submitImpGuess()">
+          <button class="ig-btn" onclick="submitImpGuess()">تأكيد</button>
+        </div>
+        <div class="ig-warn">⚠️ بمجرد ما تضغط تأكيد ما تقدر ترجع</div>
+      </div>`;
+    }
+  }
 
   const votes=S.votes||{};
   const totalVotes=Object.keys(votes).length;
@@ -533,6 +569,7 @@ function drawReveal(){
   }
   $('roleView').innerHTML=`<div class="seal revealed" id="seal">${sealHtml}</div>
     <div class="role-foot">${imp?'ما عندك الكلمة. اسمع تلميحاتهم وجاوب بشكل يخليهم ما يشكّون فيك.':'احفظ الكلمة ولا تقولها صريحة. لمّحوا لها بالدور.'}</div>
+    ${impGuessHtml}
     ${voteHtml}
     ${renderLB(S.scores||{},S.players||[],false)}
     <div class="ctl"><button class="upd" onclick="refresh(false)">🔄 تحديث</button>
@@ -540,6 +577,29 @@ function drawReveal(){
   $('roleView').classList.toggle('imp',imp);
 }
 
+async function submitImpGuess(){
+  const inp=document.getElementById('impGuessInput');
+  if(!inp) return;
+  const guess=(inp.value||'').trim();
+  if(!guess){inp.style.borderColor='var(--red)';return;}
+  // normalize: remove Arabic diacritics, trim, lowercase
+  function norm(s){return s.replace(/[\u064B-\u065F]/g,'').trim().toLowerCase();}
+  const correct = norm(guess) === norm(S.word);
+  const latest=(await pullFrom(playerCode))||S;
+  latest.impGuesses=latest.impGuesses||{};
+  if(latest.impGuesses[picked]) return; // already guessed
+  latest.impGuesses[picked]=correct?'correct':'wrong';
+  if(correct){
+    latest.scores=latest.scores||{};
+    latest.scores[picked]=(latest.scores[picked]||0)+1;
+    toast('🎉 أصبت الكلمة! +1 نقطة');
+  } else {
+    toast('❌ ما أصبت — الكلمة كانت: '+S.word);
+  }
+  await pushTo(playerCode,latest);
+  S=latest;
+  drawReveal();
+}
 async function castVote(name){
   const latest=(await pullFrom(playerCode))||S;
   latest.votes=latest.votes||{};
