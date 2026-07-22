@@ -113,6 +113,20 @@
   .vote-result{background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.4);border-radius:16px;padding:16px;margin-top:10px}
   .vote-result .rname{font-family:"Cairo";font-weight:900;font-size:26px;color:var(--red);text-shadow:0 0 20px rgba(244,63,94,.4)}
   .vote-wait{color:var(--muted);font-size:12.5px;margin-top:6px}
+  .vresult-label{font-size:13px;margin-bottom:6px;color:var(--muted)}
+  .vrows-wrap{background:var(--surface2);border:1px solid var(--line);border-radius:13px;padding:10px 12px;margin-top:10px;text-align:right}
+  .vrows-title{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:8px}
+  .vrow{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13.5px;flex-wrap:wrap}
+  .vrow:last-child{border-bottom:none}
+  .vname{font-weight:700;color:var(--violet-soft)}
+  .varrow{color:var(--muted);font-size:12px}
+  .vtarget{font-weight:700}
+  .vtarget.vcorrect{color:var(--ok)}
+  .vtarget.vwrong{color:var(--red);opacity:.8}
+  .vicon{font-size:14px}
+  .vwon-badge{margin-top:8px;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.3);border-radius:10px;padding:6px 12px;font-size:13px;font-weight:700;color:var(--ok)}
+  .vlost-badge{margin-top:8px;background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.2);border-radius:10px;padding:6px 12px;font-size:13px;font-weight:600;color:#ffb3c0}
+  .vwinners{margin-top:8px;font-size:13px;font-weight:700;color:var(--ok)}
   /* leaderboard */
   .lb-card{background:linear-gradient(180deg,var(--surface),var(--bg2));border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin-top:14px;width:min(360px,92vw)}
   .lb-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
@@ -195,7 +209,7 @@ let toastT;function toast(m){const t=$('toast');t.textContent=m;t.classList.add(
 function shareLink(code){return location.href.split('#')[0]+'#room='+code;}
 
 /* ============ HOST ============ */
-let H={players:[],catKey:"random",impCount:1,tellCat:true,cat:"",word:"",imps:[],pins:{},scores:{},votes:{},voteRound:0,v:0,ts:0};
+let H={players:[],catKey:"random",impCount:1,tellCat:true,cat:"",word:"",imps:[],pins:{},scores:{},votes:{},voteRound:0,scoredRound:-1,v:0,ts:0};
 let roomCode=null, pushTimer=null;
 let myName=null, myRevealed=false, hostPinStage=null;
 function esc(s){return (''+s).replace(/'/g,"\\'");}
@@ -457,33 +471,63 @@ function drawReveal(){
   const sealHtml = imp
     ? `<div class="glow"></div><div class="big-imp">أنت الامبوستر</div>${S.tellCat?`<div class="cat-pill">التصنيف: ${S.cat}</div>`:''}<div class="tap" style="color:var(--red)">🤫 طنّش وخلّك معاهم</div>`
     : `<div class="glow"></div><div class="cat-pill">${S.cat}</div><div class="word" dir="auto">${S.word}</div><div class="tap" style="font-size:14px">هذي كلمتك السرية</div>`;
-  // voting
+
   const votes=S.votes||{};
   const totalVotes=Object.keys(votes).length;
   const allVoted=S.players&&totalVotes>=S.players.length;
   const myVote=votes[picked];
+  const impSet=new Set(S.imps||[]);
+
   let voteHtml='';
   if(allVoted){
-    const tally={};
-    Object.values(votes).forEach(v=>{tally[v]=(tally[v]||0)+1;});
-    const topVote=Object.entries(tally).sort((a,b)=>b[1]-a[1])[0];
+    // Who guessed correctly
+    const winners=Object.entries(votes).filter(([v,t])=>impSet.has(t)).map(([v])=>v);
+    const losers=Object.entries(votes).filter(([v,t])=>!impSet.has(t)).map(([v])=>v);
+    const iWon=impSet.has(myVote);
+    // Build vote summary rows
+    const voteRows=Object.entries(votes).map(([voter,target])=>{
+      const correct=impSet.has(target);
+      return `<div class="vrow">
+        <span class="vname">${voter}</span>
+        <span class="varrow">صوّت على</span>
+        <span class="vtarget ${correct?'vcorrect':'vwrong'}">${target}</span>
+        <span class="vicon">${correct?'✅':'❌'}</span>
+      </div>`;
+    }).join('');
     voteHtml=`<div class="vote-panel">
       <div class="vote-result">
-        <div style="font-size:13px;margin-bottom:6px">🎭 الامبوستر الحقيقي</div>
+        <div class="vresult-label">🎭 الامبوستر الحقيقي</div>
         <div class="rname">${S.imps.join('، ')}</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:6px">أكثر صوت: ${topVote?topVote[0]+' ('+topVote[1]+'✓)':''}</div>
+        ${iWon
+          ? `<div class="vwon-badge">🏆 أجبت صح! +1 نقطة</div>`
+          : `<div class="vlost-badge">❌ ما أصبت</div>`}
       </div>
+      <div class="vrows-wrap">
+        <div class="vrows-title">🗳️ كيف صوّت الجميع</div>
+        ${voteRows}
+      </div>
+      ${winners.length?`<div class="vwinners">🎯 أصابوا: ${winners.join('، ')}</div>`:''}
     </div>`;
   } else if(myVote){
+    // Show live partial votes so far
+    const voteRows=Object.entries(votes).map(([voter,target])=>
+      `<div class="vrow"><span class="vname">${voter}</span><span class="varrow">صوّت على</span><span class="vtarget">${target}</span></div>`
+    ).join('');
     voteHtml=`<div class="vote-panel">
       <div class="vote-title">صوّتك: <b style="color:var(--violet-soft)">${myVote}</b></div>
+      ${voteRows?`<div class="vrows-wrap" style="margin-top:10px">${voteRows}</div>`:''}
       <div class="vote-wait">⏳ بانتظار ${S.players.length-totalVotes} شخص…</div>
     </div>`;
   } else {
     const others=S.players.filter(n=>n!==picked);
+    // Show partial votes so far even before I vote
+    const voteRows=Object.entries(votes).map(([voter,target])=>
+      `<div class="vrow"><span class="vname">${voter}</span><span class="varrow">صوّت على</span><span class="vtarget">${target}</span></div>`
+    ).join('');
     voteHtml=`<div class="vote-panel">
       <div class="vote-title">🗳️ من تعتقد إنه الامبوستر؟</div>
       <div class="vote-grid">${others.map(n=>`<button class="vote-btn" onclick="castVote('${esc(n)}')">${n}</button>`).join('')}</div>
+      ${voteRows?`<div class="vrows-wrap" style="margin-top:10px">${voteRows}</div>`:''}
       <div class="vote-wait">${totalVotes} / ${S.players.length} صوتوا</div>
     </div>`;
   }
@@ -495,11 +539,24 @@ function drawReveal(){
     <button onclick="picked=null;verified=false;revealed=false;renderPicker()">↩︎ مب أنا</button></div>`;
   $('roleView').classList.toggle('imp',imp);
 }
+
 async function castVote(name){
   const latest=(await pullFrom(playerCode))||S;
   latest.votes=latest.votes||{};
-  if(latest.votes[picked]) return; // already voted
+  if(latest.votes[picked]) return;
   latest.votes[picked]=name;
+
+  // Auto-score when all have voted (only once per round)
+  const totalNow=Object.keys(latest.votes).length;
+  if(totalNow>=(latest.players||[]).length && latest.scoredRound!==latest.voteRound){
+    latest.scoredRound=latest.voteRound;
+    latest.scores=latest.scores||{};
+    const impSet=new Set(latest.imps||[]);
+    Object.entries(latest.votes).forEach(([voter,target])=>{
+      if(impSet.has(target)) latest.scores[voter]=(latest.scores[voter]||0)+1;
+    });
+  }
+
   await pushTo(playerCode,latest);
   S=latest;
   if(revealed) drawReveal(); else renderRole(false);
