@@ -127,6 +127,10 @@
   .vwon-badge{margin-top:8px;background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.3);border-radius:10px;padding:6px 12px;font-size:13px;font-weight:700;color:var(--ok)}
   .vlost-badge{margin-top:8px;background:rgba(244,63,94,.08);border:1px solid rgba(244,63,94,.2);border-radius:10px;padding:6px 12px;font-size:13px;font-weight:600;color:#ffb3c0}
   .vwinners{margin-top:8px;font-size:13px;font-weight:700;color:var(--ok)}
+  .vcd-wrap{position:relative;width:54px;height:54px;margin:0 auto 10px;display:flex;align-items:center;justify-content:center}
+  .vcd-num{position:absolute;font-family:"Space Grotesk";font-weight:700;font-size:15px;text-align:center}
+  .vote-open-row{display:flex;gap:9px;margin-top:10px;align-items:center}
+  .vtime-sel{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:12px;padding:10px 12px;font-family:inherit;font-size:14px;font-weight:600;outline:none;flex:none;width:110px}
   /* imp guess */
   .imp-guess-box{width:min(340px,90vw);margin:14px auto 0;background:var(--surface2);border:1px solid var(--line);border-radius:16px;padding:14px}
   .ig-label{font-size:13px;color:var(--muted);font-weight:600;margin-bottom:10px}
@@ -220,7 +224,7 @@ let toastT;function toast(m){const t=$('toast');t.textContent=m;t.classList.add(
 function shareLink(code){return location.href.split('#')[0]+'#room='+code;}
 
 /* ============ HOST ============ */
-let H={players:[],catKey:"random",impCount:1,tellCat:true,impCanGuess:false,cat:"",word:"",imps:[],pins:{},scores:{},votes:{},impGuesses:{},voteRound:0,scoredRound:-1,v:0,ts:0};
+let H={players:[],catKey:"random",impCount:1,tellCat:true,impCanGuess:false,cat:"",word:"",imps:[],pins:{},scores:{},votes:{},impGuesses:{},voteRound:0,scoredRound:-1,votingOpen:false,voteDeadline:0,voteSeconds:30,v:0,ts:0};
 let roomCode=null, pushTimer=null;
 let myName=null, myRevealed=false, hostPinStage=null;
 function esc(s){return (''+s).replace(/'/g,"\\'");}
@@ -270,13 +274,23 @@ function renderHost(){
     </div>
     <div class="card">
       <p class="label"><span class="dot"></span> التحكّم</p>
-      <p class="hint">يولّد كلمة جديدة سرّية للجميع — ما تشوفها إلا من "دورك" فوق.</p>
+      <p class="hint">يولّد كلمة جديدة — اضغط بعدها "فتح التصويت" لما تبون تصوتون.</p>
       <button class="go" onclick="newRound()">🔄 كلمة جديدة (جولة جديدة)</button>
+      <div class="vote-open-row">
+        <select id="vtSel" class="vtime-sel" onchange="H.voteSeconds=+this.value;pushSoon()">
+          <option value="30" ${H.voteSeconds===30?'selected':''}>30 ثانية</option>
+          <option value="60" ${H.voteSeconds===60?'selected':''}>60 ثانية</option>
+          <option value="90" ${H.voteSeconds===90?'selected':''}>90 ثانية</option>
+        </select>
+        <button class="go" style="flex:1" onclick="openVoting()">🗳️ فتح التصويت</button>
+      </div>
+      ${H.votingOpen&&H.voteDeadline>Date.now()?'<p class="hint" style="color:var(--ok);margin-top:6px">✅ التصويت مفتوح الآن</p>':''}
     </div>
     <div class="card">
       <p class="label"><span class="dot"></span> لوحة النقاط</p>
-      <p class="hint" style="margin-bottom:12px">عدّل النقاط يدوياً بعد كل جولة.</p>
+      <p class="hint" style="margin-bottom:10px">تُحدَّث تلقائياً — تقدر تعدّل يدوياً.</p>
       ${renderLB(H.scores||{},H.players,true)}
+      <button class="go sec" style="margin-top:12px;color:#ffb3c0;font-size:13px;padding:11px" onclick="resetScores()">🗑️ إعادة تعيين النقاط</button>
     </div>
     <div class="card">
       <p class="label"><span class="dot"></span> رابط الغرفة (ثابت — أرسله مرة وحدة)</p>
@@ -339,7 +353,7 @@ function addName(){const inp=$('nameInput');const v=(inp.value||'').trim();if(!v
 function rmName(i){const n=H.players[i];H.players.splice(i,1);if(H.imps.includes(n)){H.imps=H.imps.filter(x=>x!==n);const pool=H.players.filter(p=>!H.imps.includes(p));if(H.imps.length<H.impCount&&pool.length){H.imps.push(pool[rndInt(pool.length)]);}}renderHost();if(roomCode)pushSoon();}
 function setCat(k){H.catKey=k;renderHost();if(roomCode)pushSoon();}
 function setImp(d){const maxImp=Math.max(1,H.players.length-1);H.impCount=Math.min(maxImp,Math.max(1,H.impCount+d));renderHost();if(roomCode)pushSoon();}
-function pickRound(){const ck=H.catKey==='random'?CAT_KEYS[rndInt(CAT_KEYS.length)]:H.catKey;H.cat=CATS[ck].name;H.word=CATS[ck].words[rndInt(CATS[ck].words.length)];H.imps=shuffle(H.players).slice(0,Math.min(H.impCount,H.players.length-1||1));H.v=(H.v||0)+1;H.votes={};H.voteRound=H.v;H.impGuesses={};}
+function pickRound(){const ck=H.catKey==='random'?CAT_KEYS[rndInt(CAT_KEYS.length)]:H.catKey;H.cat=CATS[ck].name;H.word=CATS[ck].words[rndInt(CATS[ck].words.length)];H.imps=shuffle(H.players).slice(0,Math.min(H.impCount,H.players.length-1||1));H.v=(H.v||0)+1;H.votes={};H.voteRound=H.v;H.impGuesses={};H.votingOpen=false;H.voteDeadline=0;}
 function createRoom(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}roomCode=rndCode();pickRound();myRevealed=false;location.hash='host='+roomCode;pushTo(roomCode,H);renderHost();toast('تم إنشاء الغرفة ✅');}
 function newRound(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}pickRound();myRevealed=false;pushTo(roomCode,H);renderHost();toast('كلمة جديدة 🔄');}
 async function resumeHost(code){roomCode=code;const s=await pullFrom(code);if(s){H=Object.assign(H,s);}renderHost();}
@@ -371,6 +385,17 @@ function renderLB(scores,players,editable){
       <div class="lb-pts">${scores[n]||0}</div>
     </div>`).join('')+`</div>`;
 }
+function openVoting(){
+  if(!roomCode){toast('أنشئ الغرفة أول');return;}
+  const sel=document.getElementById('vtSel');
+  if(sel) H.voteSeconds=+sel.value;
+  H.votes={};H.votingOpen=true;H.voteDeadline=Date.now()+(H.voteSeconds||30)*1000;
+  pushTo(roomCode,H);renderHost();toast('التصويت مفتوح 🗳️');
+}
+function resetScores(){
+  if(!confirm('تأكيد إعادة تعيين كل النقاط؟')) return;
+  H.scores={};pushSoon();renderHost();toast('تم تصفير النقاط');
+}
 function addScore(name,delta){
   H.scores=H.scores||{};
   H.scores[name]=Math.max(0,(H.scores[name]||0)+delta);
@@ -395,9 +420,12 @@ async function refresh(first){
   if(pinStage){ S=s; lastV=s.v; return; } // لا نقاطع كتابة الرمز
   const newRoundFlag = (s.v!==lastV);
   const prevTotalVotes=S?Object.keys(S.votes||{}).length:0;
+  const prevVotingOpen=S?!!S.votingOpen:false;
   S=s; lastV=s.v;
   const nowTotalVotes=Object.keys(S.votes||{}).length;
   if(!newRoundFlag && revealed && nowTotalVotes>prevTotalVotes && nowTotalVotes>=(S.players||[]).length) toast('✅ الكل صوّت — شوف الامبوستر!');
+  const votingJustOpened=!prevVotingOpen && S.votingOpen;
+  if(revealed && (votingJustOpened||(S.votingOpen&&newRoundFlag))) setTimeout(startVoteCountdown,200);
   if(picked && !S.players.includes(picked)){ verified=false; renderRole(true); return; }
   if(picked && verified){ renderRole(false); if(newRoundFlag && revealed){flashSeal();toast('🔄 الكلمة تحدّثت');} }
   else renderPicker();
@@ -481,6 +509,39 @@ function renderRole(removed){
       <button onclick="picked=null;verified=false;renderPicker()">↩︎ مب أنا</button></div>`;
   }else{ drawReveal(); }
 }
+let _cdInterval=null;
+function startVoteCountdown(){
+  clearInterval(_cdInterval);
+  function tick(){
+    const el=document.getElementById('vcd');
+    if(!el){clearInterval(_cdInterval);return;}
+    const rem=Math.max(0,Math.ceil((S.voteDeadline-Date.now())/1000));
+    const pct=Math.max(0,rem/(S.voteSeconds||30))*100;
+    el.textContent=rem+'ث';
+    el.style.color=rem<=10?'var(--red)':'var(--violet-soft)';
+    const arc=document.getElementById('vcdarc');
+    if(arc){const d=2*Math.PI*20;arc.style.strokeDashoffset=d*(1-pct/100);}
+    if(rem<=0){clearInterval(_cdInterval);checkVoteTimeout();}
+  }
+  tick();
+  _cdInterval=setInterval(tick,500);
+}
+async function checkVoteTimeout(){
+  const latest=(await pullFrom(playerCode))||S;
+  if(latest.scoredRound===latest.voteRound){S=latest;drawReveal();return;}
+  if(!Object.keys(latest.votes||{}).length){S=latest;drawReveal();return;}
+  latest.scoredRound=latest.voteRound;
+  latest.votingOpen=false;
+  latest.scores=latest.scores||{};
+  const impSet=new Set(latest.imps||[]);
+  Object.entries(latest.votes||{}).forEach(([voter,target])=>{
+    if(impSet.has(target)) latest.scores[voter]=(latest.scores[voter]||0)+1;
+  });
+  await pushTo(playerCode,latest);
+  S=latest;
+  toast('⏰ انتهى وقت التصويت!');
+  drawReveal();
+}
 function flip(){revealed=true;drawReveal();}
 function drawReveal(){
   const imp=S.imps.includes(picked);
@@ -513,14 +574,12 @@ function drawReveal(){
   const allVoted=S.players&&totalVotes>=S.players.length;
   const myVote=votes[picked];
   const impSet=new Set(S.imps||[]);
+  const votingOpen=S.votingOpen&&S.voteDeadline>Date.now();
+  const votingClosed=S.scoredRound===S.voteRound; // scoring already happened
 
   let voteHtml='';
-  if(allVoted){
-    // Who guessed correctly
-    const winners=Object.entries(votes).filter(([v,t])=>impSet.has(t)).map(([v])=>v);
-    const losers=Object.entries(votes).filter(([v,t])=>!impSet.has(t)).map(([v])=>v);
+  if(votingClosed||allVoted){
     const iWon=impSet.has(myVote);
-    // Build vote summary rows
     const voteRows=Object.entries(votes).map(([voter,target])=>{
       const correct=impSet.has(target);
       return `<div class="vrow">
@@ -530,42 +589,56 @@ function drawReveal(){
         <span class="vicon">${correct?'✅':'❌'}</span>
       </div>`;
     }).join('');
+    const winners=Object.entries(votes).filter(([v,t])=>impSet.has(t)).map(([v])=>v);
     voteHtml=`<div class="vote-panel">
       <div class="vote-result">
         <div class="vresult-label">🎭 الامبوستر الحقيقي</div>
         <div class="rname">${S.imps.join('، ')}</div>
-        ${iWon
-          ? `<div class="vwon-badge">🏆 أجبت صح! +1 نقطة</div>`
-          : `<div class="vlost-badge">❌ ما أصبت</div>`}
+        ${myVote?(iWon?'<div class="vwon-badge">🏆 أجبت صح! +1 نقطة</div>':'<div class="vlost-badge">❌ ما أصبت</div>'):'<div class="vlost-badge">⏰ ما صوّتت في الوقت</div>'}
       </div>
-      <div class="vrows-wrap">
-        <div class="vrows-title">🗳️ كيف صوّت الجميع</div>
-        ${voteRows}
-      </div>
+      ${voteRows?`<div class="vrows-wrap"><div class="vrows-title">🗳️ كيف صوّت الجميع</div>${voteRows}</div>`:''}
       ${winners.length?`<div class="vwinners">🎯 أصابوا: ${winners.join('، ')}</div>`:''}
     </div>`;
-  } else if(myVote){
-    // Show live partial votes so far
-    const voteRows=Object.entries(votes).map(([voter,target])=>
-      `<div class="vrow"><span class="vname">${voter}</span><span class="varrow">صوّت على</span><span class="vtarget">${target}</span></div>`
-    ).join('');
+  } else if(!S.votingOpen){
     voteHtml=`<div class="vote-panel">
-      <div class="vote-title">صوّتك: <b style="color:var(--violet-soft)">${myVote}</b></div>
-      ${voteRows?`<div class="vrows-wrap" style="margin-top:10px">${voteRows}</div>`:''}
-      <div class="vote-wait">⏳ بانتظار ${S.players.length-totalVotes} شخص…</div>
+      <div class="vote-wait" style="font-size:14px">⏳ انتظر الهوست يفتح التصويت…</div>
     </div>`;
-  } else {
-    const others=S.players.filter(n=>n!==picked);
-    // Show partial votes so far even before I vote
+  } else if(myVote){
     const voteRows=Object.entries(votes).map(([voter,target])=>
       `<div class="vrow"><span class="vname">${voter}</span><span class="varrow">صوّت على</span><span class="vtarget">${target}</span></div>`
     ).join('');
+    const rem=Math.max(0,Math.ceil((S.voteDeadline-Date.now())/1000));
+    const pct=Math.max(0,rem/(S.voteSeconds||30)*100);
+    const circum=2*Math.PI*20;
     voteHtml=`<div class="vote-panel">
-      <div class="vote-title">🗳️ من تعتقد إنه الامبوستر؟</div>
-      <div class="vote-grid">${others.map(n=>`<button class="vote-btn" onclick="castVote('${esc(n)}')">${n}</button>`).join('')}</div>
-      ${voteRows?`<div class="vrows-wrap" style="margin-top:10px">${voteRows}</div>`:''}
+      <div class="vcd-wrap">
+        <svg width="54" height="54" viewBox="0 0 54 54"><circle cx="27" cy="27" r="20" fill="none" stroke="var(--line)" stroke-width="5"/><circle id="vcdarc" cx="27" cy="27" r="20" fill="none" stroke="var(--violet)" stroke-width="5" stroke-linecap="round" stroke-dasharray="${circum}" stroke-dashoffset="${circum*(1-pct/100)}" transform="rotate(-90 27 27)" style="transition:stroke-dashoffset .5s"/></svg>
+        <div id="vcd" class="vcd-num" style="color:${rem<=10?'var(--red)':'var(--violet-soft)'}">${rem}ث</div>
+      </div>
+      <div class="vote-title" style="margin-bottom:6px">صوّتك: <b style="color:var(--violet-soft)">${myVote}</b></div>
+      ${voteRows?`<div class="vrows-wrap">${voteRows}</div>`:''}
       <div class="vote-wait">${totalVotes} / ${S.players.length} صوتوا</div>
     </div>`;
+    setTimeout(startVoteCountdown,0);
+  } else {
+    const others=S.players.filter(n=>n!==picked);
+    const voteRows=Object.entries(votes).map(([voter,target])=>
+      `<div class="vrow"><span class="vname">${voter}</span><span class="varrow">صوّت على</span><span class="vtarget">${target}</span></div>`
+    ).join('');
+    const rem=Math.max(0,Math.ceil((S.voteDeadline-Date.now())/1000));
+    const pct=Math.max(0,rem/(S.voteSeconds||30)*100);
+    const circum=2*Math.PI*20;
+    voteHtml=`<div class="vote-panel">
+      <div class="vcd-wrap">
+        <svg width="54" height="54" viewBox="0 0 54 54"><circle cx="27" cy="27" r="20" fill="none" stroke="var(--line)" stroke-width="5"/><circle id="vcdarc" cx="27" cy="27" r="20" fill="none" stroke="var(--violet)" stroke-width="5" stroke-linecap="round" stroke-dasharray="${circum}" stroke-dashoffset="${circum*(1-pct/100)}" transform="rotate(-90 27 27)" style="transition:stroke-dashoffset .5s"/></svg>
+        <div id="vcd" class="vcd-num" style="color:${rem<=10?'var(--red)':'var(--violet-soft)'}">${rem}ث</div>
+      </div>
+      <div class="vote-title">🗳️ من تعتقد إنه الامبوستر؟</div>
+      <div class="vote-grid">${others.map(n=>`<button class="vote-btn" onclick="castVote('${esc(n)}')">${n}</button>`).join('')}</div>
+      ${voteRows?`<div class="vrows-wrap" style="margin-top:8px">${voteRows}</div>`:''}
+      <div class="vote-wait">${totalVotes} / ${S.players.length} صوتوا</div>
+    </div>`;
+    setTimeout(startVoteCountdown,0);
   }
   $('roleView').innerHTML=`<div class="seal revealed" id="seal">${sealHtml}</div>
     <div class="role-foot">${imp?'ما عندك الكلمة. اسمع تلميحاتهم وجاوب بشكل يخليهم ما يشكّون فيك.':'احفظ الكلمة ولا تقولها صريحة. لمّحوا لها بالدور.'}</div>
@@ -601,7 +674,9 @@ async function submitImpGuess(){
   drawReveal();
 }
 async function castVote(name){
+  if(!S.votingOpen||Date.now()>S.voteDeadline){toast('التصويت مغلق');return;}
   const latest=(await pullFrom(playerCode))||S;
+  if(!latest.votingOpen||Date.now()>latest.voteDeadline){toast('انتهى وقت التصويت');return;}
   latest.votes=latest.votes||{};
   if(latest.votes[picked]) return;
   latest.votes[picked]=name;
