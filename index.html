@@ -582,7 +582,7 @@ function renderRole(removed){
     return;
   }
   const imp=S.imps.includes(picked);
-  stage.classList.toggle('imp',imp);
+  stage.classList.toggle('imp', imp && !S.blindImp);
   if(!revealed){
     stage.innerHTML=`
       <div class="seal" id="seal" onclick="flip()"><div class="glow"></div>${MASK}
@@ -737,7 +737,7 @@ function drawReveal(){
     ${renderLB(S.scores||{},S.players||[],false)}
     <div class="ctl"><button class="upd" onclick="refresh(false)">🔄 تحديث</button>
     <button onclick="picked=null;verified=false;revealed=false;renderPicker()">↩︎ مب أنا</button></div>`;
-  $('roleView').classList.toggle('imp',imp);
+  $('roleView').classList.toggle('imp', imp && !S.blindImp);
 }
 
 async function submitImpGuess(){
