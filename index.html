@@ -6,7 +6,8 @@
 <title>ethical — لعبة الامبوستر</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap"></noscript>
 <style>
   :root{
     --bg:#14101f; --bg2:#0e0b16; --surface:#1d1730; --surface2:#251d3d;
@@ -110,6 +111,7 @@
   .vote-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:8px}
   .vote-btn{border:1px solid var(--line);background:var(--surface2);color:var(--text);padding:12px;border-radius:13px;font-family:inherit;font-weight:700;font-size:15px;cursor:pointer;transition:.15s}
   .vote-btn:active{transform:scale(.95);border-color:var(--violet)}
+  .vote-btn.sel{background:linear-gradient(120deg,var(--violet),var(--magenta));border-color:transparent;color:#fff;box-shadow:0 8px 20px -10px var(--violet)}
   .vote-result{background:rgba(244,63,94,.1);border:1px solid rgba(244,63,94,.4);border-radius:16px;padding:16px;margin-top:10px}
   .vote-result .rname{font-family:"Cairo";font-weight:900;font-size:26px;color:var(--red);text-shadow:0 0 20px rgba(244,63,94,.4)}
   .vote-wait{color:var(--muted);font-size:12.5px;margin-top:6px}
@@ -221,23 +223,129 @@ function dec(t){let b=t.replace(/-/g,'+').replace(/_/g,'/');while(b.length%4)b+=
 
 /* ============ realtime store (ntfy.sh, no signup) ============ */
 function topic(code){return 'ethical-imp-'+code;}
-async function pushTo(code,state){
-  state.ts=Date.now();
-  try{ await fetch('https://ntfy.sh/'+topic(code),{method:'POST',body:enc(state)}); }catch(e){ toast('تعذّر الاتصال بالإنترنت'); }
+/* ===== network layer — built around ntfy.sh's free limits:
+   12 requests/min per IP (after a 60 burst) · 250 messages/day · 200 MB/day ===== */
+let FETCH_TIMEOUT=12000, _backoffUntil=0, _lastErr=null, _errToastAt=0, BACKOFF_SCALE=1, _pullErr=false;
+function netNote(code){
+  const now=Date.now(); if(now-_errToastAt<12000) return; _errToastAt=now;
+  toast(code===42908?'⚠️ وصلت الحد اليومي للرسائل (250) على هذا الاتصال — جرّب بعد شوي أو من شبكة ثانية'
+       :code===42905?'⚠️ وصلت الحد اليومي للبيانات على هذا الاتصال'
+       :'تعذّر الاتصال بالسيرفر — بنعيد المحاولة تلقائياً');
 }
-async function pullFrom(code){
-  try{
-    const r=await fetch('https://ntfy.sh/'+topic(code)+'/json?poll=1&since=12h');
+async function ntfyFetch(url,opts,tries){
+  tries=tries||3;
+  for(let i=0;i<tries;i++){
+    const wait=_backoffUntil-Date.now(); if(wait>0) await sleep(Math.min(wait,20000));
+    let tm=null;
+    try{
+      const ctl=(typeof AbortController!=='undefined')?new AbortController():null;
+      if(ctl) tm=setTimeout(()=>ctl.abort(),FETCH_TIMEOUT);        // never hang forever
+      const r=await fetch(url,Object.assign({cache:'no-store'},opts||{},ctl?{signal:ctl.signal}:{}));
+      clearTimeout(tm);
+      if(r.ok){_lastErr=null;return r;}
+      let code=0;try{code=(JSON.parse(await r.text())||{}).code||0;}catch(e){}
+      _lastErr={status:r.status,code};
+      if(r.status===429){
+        if(code===42908||code===42905){netNote(code);return null;}   // daily quota: retrying can't help
+        _backoffUntil=Date.now()+Math.min(20000,3000*Math.pow(2,i))*BACKOFF_SCALE;
+      }
+    }catch(e){clearTimeout(tm);_lastErr={status:0,code:0};}
+    await sleep((500*Math.pow(2,i)+Math.random()*300)*BACKOFF_SCALE);
+  }
+  netNote(0);return null;
+}
+
+/* every device keeps the newest state it has ever seen (highest rev) — never goes backwards */
+const _rooms={};
+const clone=o=>o?JSON.parse(JSON.stringify(o)):o;
+function roomCache(code){return _rooms[code]||(_rooms[code]={best:null,bt:0,cursor:0,es:null,lastEvt:0,onState:null,_deb:null});}
+function absorb(c,o){
+  if(!o||o.event!=='message'||!o.message) return false;
+  let s;try{s=dec(o.message);}catch(e){return false;}
+  if(!s) return false;
+  const t=o.time||0; if(t>c.cursor) c.cursor=t;
+  const rv=s.rev||0,b=c.best;
+  if(!b||rv>(b.rev||0)||(rv===(b.rev||0)&&(t>c.bt||(t===c.bt&&(s.ts||0)>=(b.ts||0))))){c.best=s;c.bt=t;return true;}
+  return false;
+}
+/* first read looks back 10m→1h→12h; after that we only ask for what's NEW (tiny responses) */
+async function pullOnce(code){
+  const c=roomCache(code);
+  const wins=c.best?[String(Math.max(1,c.cursor-3))]:['10m','1h','12h'];
+  for(const w of wins){
+    const r=await ntfyFetch('https://ntfy.sh/'+topic(code)+'/json?poll=1&since='+w);
+    if(!r) return false;
     const txt=await r.text();
-    let best=null,bestTs=-1;
-    txt.trim().split('\n').filter(Boolean).forEach(ln=>{
-      let o;try{o=JSON.parse(ln);}catch(e){return;}
-      if(o.event!=='message'||!o.message)return;
-      let s;try{s=dec(o.message);}catch(e){return;}
-      if(s&&s.ts>bestTs){bestTs=s.ts;best=s;}
-    });
-    return best;
-  }catch(e){return null;}
+    txt.split('\n').forEach(ln=>{if(!ln.trim())return;let o;try{o=JSON.parse(ln);}catch(e){return;}absorb(c,o);});
+    if(c.best) break;
+  }
+  return true;
+}
+async function pullFrom(code,minRev){
+  _pullErr=false;
+  const c=roomCache(code);
+  for(let i=0;i<(minRev?4:1);i++){
+    if(!(await pullOnce(code))){_pullErr=true;return clone(c.best)||null;}
+    if(!minRev||(c.best&&(c.best.rev||0)>=minRev)) return clone(c.best)||null;
+    await sleep((350+i*250)*BACKOFF_SCALE);
+  }
+  _pullErr=true;return clone(c.best)||null;
+}
+async function pushTo(code,state){
+  const prev=state.rev||0;
+  state.rev=prev+1;state.ts=Date.now();
+  const r=await ntfyFetch('https://ntfy.sh/'+topic(code),{method:'POST',body:enc(state)});
+  if(!r){state.rev=prev;return false;}               // failed → don't burn a revision number
+  try{absorb(roomCache(code),JSON.parse(await r.text()));}catch(e){}   // we immediately know our own write
+  return true;
+}
+/* live updates without polling: one open connection per device instead of a request every few seconds */
+function openStream(code,onState){
+  const c=roomCache(code);c.onState=onState;
+  if(c.es||typeof EventSource==='undefined') return;
+  try{
+    const es=new EventSource('https://ntfy.sh/'+topic(code)+'/sse');c.es=es;
+    es.onopen=()=>{c.lastEvt=Date.now();};
+    es.addEventListener('keepalive',()=>{c.lastEvt=Date.now();});
+    es.onmessage=ev=>{
+      c.lastEvt=Date.now();let o;try{o=JSON.parse(ev.data);}catch(e){return;}
+      if(absorb(c,o)&&c.onState){clearTimeout(c._deb);c._deb=setTimeout(()=>c.onState(clone(c.best)),150);}
+    };
+  }catch(e){}
+}
+function streamAlive(code){const c=_rooms[code];return !!(c&&c.es&&Date.now()-c.lastEvt<90000);}
+
+/* ============ sync helpers ============ */
+let SYNC_WAIT=900;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function asArr(v){return Array.isArray(v)?v:(v?[v]:[]);}
+function voteCount(st){const v=st.votes||{};return (st.players||[]).filter(p=>asArr(v[p]).length>0).length;}
+/* one point per correct impostor picked; runs once per voting session */
+function scoreRound(st){
+  if(st.scoredRound===st.voteRound) return false;
+  st.scoredRound=st.voteRound; st.votingOpen=false; st.scores=st.scores||{};
+  const imps=new Set(st.imps||[]);
+  Object.entries(st.votes||{}).forEach(([voter,t])=>{
+    if(!(st.players||[]).includes(voter)) return;
+    const pts=asArr(t).filter(x=>imps.has(x)).length;
+    if(pts) st.scores[voter]=(st.scores[voter]||0)+pts;
+  });
+  return true;
+}
+/* read-modify-write with verification, so two simultaneous writers can't erase each other */
+async function safeUpdate(code,mutate,check){
+  let base=await pullFrom(code);
+  for(let i=0;i<6;i++){
+    if(!base) return null;
+    if(mutate(base)===false) return base;
+    if(await pushTo(code,base)){
+      await sleep((SYNC_WAIT+Math.random()*SYNC_WAIT)*(1+i*0.7));      // growing random pause → colliding writers drift apart
+      const chk=await pullFrom(code);
+      if(chk&&check(chk)) return chk;
+      base=chk;                                       // reuse the verification read as next base
+    }else{await sleep(1200*BACKOFF_SCALE);base=await pullFrom(code);}
+  }
+  return null;
 }
 
 /* ============ helpers ============ */
@@ -261,8 +369,72 @@ function hostSetName(n){myName=n;myRevealed=false;H.pins=H.pins||{};hostPinStage
 function hostSubmitPin(){const a=toEN($('hp1').value);const e=$('hperr');if(!/^\d{4}$/.test(a)){e.textContent='لازم ٤ أرقام';return;}H.pins=H.pins||{};H.pins[myName]=pinHash(a,roomCode);hostPinStage=null;pushSoon();renderHost();toast('تم حفظ رمزك ✓');}
 function hostFlip(){myRevealed=true;renderHost();}
 function hostClearName(){myName=null;myRevealed=false;hostPinStage=null;renderHost();}
-function resetPin(name){if(H.pins)delete H.pins[name];pushSoon();renderHost();toast('تم مسح رمز '+name);}
-function pushSoon(){clearTimeout(pushTimer);pushTimer=setTimeout(()=>pushTo(roomCode,H),500);}
+let dirtyScores={}, pendingDelta={}, delPins={}, _finT=null, _hostPollT=null, hostReady=true, _hq=Promise.resolve();
+function resetPin(name){if(H.pins)delete H.pins[name];delPins[name]=1;pushSoon();renderHost();toast('تم مسح رمز '+name);}
+/* bring in what players wrote (pins, votes, auto-scores) without losing the host's own pending edits */
+function mergeServer(sv){
+  if(!sv) return;
+  if((sv.rev||0)<(H.rev||0)) return;                 // older than what we already know → ignore
+  H.rev=Math.max(H.rev||0,sv.rev||0);
+  const sc=Object.assign({},sv.scores||{});
+  Object.keys(dirtyScores).forEach(n=>{sc[n]=0;});                                   // host reset → zero
+  Object.keys(pendingDelta).forEach(n=>{sc[n]=Math.max(0,(sc[n]||0)+pendingDelta[n]);}); // host +/- applied on top of the LIVE value
+  H.scores=sc;
+  const pn=Object.assign({},H.pins||{},sv.pins||{});
+  Object.keys(delPins).forEach(n=>{delete pn[n];});
+  H.pins=pn;
+  if(sv.v===H.v&&sv.voteRound===H.voteRound){
+    H.votes=sv.votes||{}; H.impGuesses=sv.impGuesses||{};
+    H.scoredRound=sv.scoredRound;
+    if(sv.scoredRound===H.voteRound) H.votingOpen=false;
+  }
+}
+const ROUND_FIELDS=['v','cat','word','imps','impHintWord','votes','voteRound','votingOpen','voteDeadline','gameOver','impGuesses'];
+const roundSnap=()=>JSON.parse(JSON.stringify(ROUND_FIELDS.reduce((o,k)=>(o[k]=H[k],o),{})));
+function roundRestore(s){Object.assign(H,s);}
+function hostRun(fn){const p=_hq.then(fn,fn);_hq=p.catch(()=>{});return p;}   // one host write at a time
+/* merge what players wrote, push, then CONFIRM it landed (nonce survives inside any later player write) */
+async function hostCommit(){
+  if(!roomCode||!hostReady) return false;
+  for(let i=0;i<3;i++){
+    const sv=await pullFrom(roomCode,H.rev||0);
+    if(_pullErr&&!sv){await sleep(800*BACKOFF_SCALE);continue;}
+    mergeServer(sv);
+    H.nonce=rndCode()+Date.now();
+    if(!(await pushTo(roomCode,H))){await sleep(1000*BACKOFF_SCALE);continue;}
+    await sleep(Math.round(SYNC_WAIT*0.6));
+    const chk=await pullFrom(roomCode);
+    if(chk&&chk.nonce===H.nonce){dirtyScores={};pendingDelta={};delPins={};return true;}
+  }
+  return false;
+}
+function pushHost(){return hostRun(hostCommit);}
+function pushSoon(){clearTimeout(pushTimer);pushTimer=setTimeout(pushHost,1200);}
+function hostApply(sv){
+  const snap=()=>JSON.stringify([H.scores,H.votes,H.scoredRound,H.pins,H.impGuesses]);
+  const before=snap();mergeServer(sv);
+  if(snap()!==before){const a=document.activeElement;if(!(a&&a.tagName==='INPUT'))renderHost();}
+}
+function startHostSync(){
+  openStream(roomCode,st=>hostApply(st));
+  clearTimeout(_hostPollT);
+  (function loop(){
+    if(typeof NO_BG_POLL!=='undefined'&&NO_BG_POLL) return;
+    _hostPollT=setTimeout(async()=>{
+      if(!document.hidden){try{hostApply(await pullFrom(roomCode));}catch(e){}}
+      loop();
+    },streamAlive(roomCode)?25000:10000);
+  })();
+}
+async function hostFinalize(){
+  if(!roomCode) return;
+  const sv=await pullFrom(roomCode);
+  if(!sv||sv.v!==H.v) return;
+  if(sv.scoredRound!==sv.voteRound && sv.votingOpen && Date.now()>=sv.voteDeadline){
+    const r=await safeUpdate(roomCode,st=>scoreRound(st)?undefined:false,st=>st.scoredRound===st.voteRound);
+    if(r){mergeServer(r);renderHost();toast('⏰ انتهى وقت التصويت');}
+  } else { mergeServer(sv); renderHost(); }
+}
 
 function renderHost(){
   const created=!!roomCode;
@@ -288,9 +460,11 @@ function renderHost(){
   } else {
     const imp=H.imps.includes(myName);
     const showNormalCard = !imp || H.blindImp;
+    const partners=(imp&&!H.blindImp)?H.imps.filter(n=>n!==myName):[];
     myCard = `<div class="now-word">${!showNormalCard
-        ? `<div class="w" style="background:none;-webkit-text-fill-color:var(--red);color:var(--red)">أنت الامبوستر 🤫</div>${H.tellCat?`<div class="c">التصنيف: ${H.cat}</div>`:''}`
+        ? `<div class="w" style="background:none;-webkit-text-fill-color:var(--red);color:var(--red)">أنت الامبوستر 🤫</div>${H.tellCat?`<div class="c">التصنيف: ${H.cat}</div>`:''}${partners.length?`<div class="c" style="color:#ffb3c0">🤝 شريكك: ${partners.join('، ')}</div>`:''}${H.impHint&&H.impHintWord?`<div class="c" style="color:var(--gold)">💡 تلميحك: ${H.impHintWord}</div>`:''}`
         : `<div class="c">${H.cat}</div><div class="w" dir="auto">${imp&&H.blindImp?(H.impHintWord||H.word):H.word}</div>`}</div>
+      <button class="go sec" style="margin-bottom:10px" onclick="window.open(shareLink(roomCode),'_blank')">🗳️ للتصويت: افتح صفحة اللاعب</button>
       <button class="go sec" onclick="hostClearName()">↩︎ مب أنا</button>`;
   }
   let liveBlock = created ? `
@@ -303,14 +477,14 @@ function renderHost(){
       <p class="hint">يولّد كلمة جديدة — اضغط بعدها "فتح التصويت" لما تبون تصوتون.</p>
       <button class="go" onclick="newRound()">🔄 كلمة جديدة (جولة جديدة)</button>
       <div class="vote-open-row">
-        <select id="vtSel" class="vtime-sel" onchange="H.voteSeconds=+this.value;pushSoon()">
+        <select id="vtSel" class="vtime-sel" onchange="H.voteSeconds=+this.value">
           <option value="30" ${H.voteSeconds===30?'selected':''}>30 ثانية</option>
           <option value="60" ${H.voteSeconds===60?'selected':''}>60 ثانية</option>
           <option value="90" ${H.voteSeconds===90?'selected':''}>90 ثانية</option>
         </select>
         <button class="go" style="flex:1" onclick="openVoting()">🗳️ فتح التصويت</button>
       </div>
-      ${H.votingOpen&&H.voteDeadline>Date.now()?'<p class="hint" style="color:var(--ok);margin-top:6px">✅ التصويت مفتوح الآن</p>':''}
+      ${H.votingOpen&&H.voteDeadline>Date.now()?`<p class="hint" style="color:var(--ok);margin-top:6px">✅ التصويت مفتوح — ${voteCount(H)} / ${H.players.length} صوّتوا</p>`:''}
     </div>
     <div class="card">
       <p class="label"><span class="dot"></span> لوحة النقاط</p>
@@ -387,20 +561,41 @@ function renderHost(){
 }
 function addName(){const inp=$('nameInput');const v=(inp.value||'').trim();if(!v)return;if(H.players.length>=16){toast('الحد ١٦ لاعب');return;}if(H.players.includes(v)){toast('الاسم مكرر');return;}H.players.push(v);renderHost();$('nameInput').focus();if(roomCode)pushSoon();}
 function rmName(i){const n=H.players[i];H.players.splice(i,1);if(H.imps.includes(n)){H.imps=H.imps.filter(x=>x!==n);const pool=H.players.filter(p=>!H.imps.includes(p));if(H.imps.length<H.impCount&&pool.length){H.imps.push(pool[rndInt(pool.length)]);}}renderHost();if(roomCode)pushSoon();}
-function setCat(k){H.catKey=k;renderHost();if(roomCode)pushSoon();}
-function setImp(d){const maxImp=Math.max(1,H.players.length-1);H.impCount=Math.min(maxImp,Math.max(1,H.impCount+d));renderHost();if(roomCode)pushSoon();}
+function setCat(k){H.catKey=k;renderHost();}
+function setImp(d){const maxImp=Math.max(1,H.players.length-1);H.impCount=Math.min(maxImp,Math.max(1,H.impCount+d));renderHost();}
 function pickRound(){const ck=H.catKey==='random'?CAT_KEYS[rndInt(CAT_KEYS.length)]:H.catKey;H.cat=CATS[ck].name;H.word=CATS[ck].words[rndInt(CATS[ck].words.length)];H.imps=shuffle(H.players).slice(0,Math.min(H.impCount,H.players.length-1||1));H.v=(H.v||0)+1;H.votes={};H.voteRound=H.v;H.impGuesses={};H.votingOpen=false;H.voteDeadline=0;H.gameOver=false;
   if(H.impHint||H.blindImp){const pool=CATS[ck].words.filter(w=>w!==H.word);H.impHintWord=pool.length?pool[rndInt(pool.length)]:'';} else {H.impHintWord='';}}
-function createRoom(){if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}roomCode=rndCode();pickRound();myRevealed=false;location.hash='host='+roomCode;pushTo(roomCode,H);renderHost();toast('تم إنشاء الغرفة ✅');}
+async function createRoom(){
+  if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}
+  roomCode=rndCode();pickRound();myRevealed=false;
+  let ok=false;for(let i=0;i<3&&!ok;i++){ok=await pushTo(roomCode,H);if(!ok)await sleep(1000*BACKOFF_SCALE);}
+  if(!ok){roomCode=null;toast('تعذّر إنشاء الغرفة — تأكد من الاتصال وحاول مرة ثانية');return;}
+  location.hash='host='+roomCode;hostReady=true;renderHost();startHostSync();toast('تم إنشاء الغرفة ✅');
+}
 async function newRound(){
   if(H.players.length<3){toast('ضيف ٣ لاعبين');return;}
-  // Pull latest scores from server before overwriting state
-  const sv=await pullFrom(roomCode);
-  if(sv&&sv.scores) H.scores=Object.assign({},H.scores,sv.scores);
-  if(sv&&sv.scoredRound!==undefined) H.scoredRound=sv.scoredRound;
-  pickRound();myRevealed=false;pushTo(roomCode,H);renderHost();toast('كلمة جديدة 🔄');
+  if(!hostReady) return;
+  clearTimeout(_finT);
+  await hostRun(async()=>{
+    const sv=await pullFrom(roomCode,H.rev||0);
+    if(_pullErr&&!sv){toast('تعذّر الاتصال — حاول مرة ثانية');return;}
+    mergeServer(sv);const snap=roundSnap();pickRound();myRevealed=false;
+    const ok=await hostCommit();
+    if(!ok) roundRestore(snap);                       // nobody else saw this round → don't keep it here either
+    renderHost();toast(ok?'كلمة جديدة 🔄':'تعذّر الحفظ — اضغط مرة ثانية');
+  });
 }
-async function resumeHost(code){roomCode=code;const s=await pullFrom(code);if(s){H=Object.assign(H,s);}renderHost();}
+async function resumeHost(code){
+  roomCode=code;hostReady=false;
+  $('hostView').innerHTML='<div class="card"><p class="label"><span class="dot"></span> جارٍ تحميل الغرفة…</p></div>';
+  let s=null;
+  for(let i=0;i<6&&!s;i++){s=await pullFrom(code);if(!s)await sleep((1000+i*500)*BACKOFF_SCALE);}
+  if(!s){
+    $('hostView').innerHTML=`<div class="card"><p class="label"><span class="dot"></span> تعذّر تحميل الغرفة</p><p class="hint">الاتصال ضعيف الحين — ما تغيّر شي في اللعبة، ولا يُحفظ أي تعديل قبل ما تتحمّل.</p><button class="go" onclick="resumeHost('${code}')">🔄 إعادة المحاولة</button></div>`;
+    return;
+  }
+  H=Object.assign(H,s);hostReady=true;renderHost();startHostSync();
+}
 function cp(t){navigator.clipboard.writeText(t).then(()=>toast('تم نسخ الرابط ✓'));}
 function cpMsg(code){const link=shareLink(code);const msg=`🎭 لعبة الامبوستر — ethical\nافتحوا الرابط واضغطوا على أسمائكم 👇\n${link}`;navigator.clipboard.writeText(msg).then(()=>toast('تم نسخ الرسالة ✓'));}
 
@@ -430,32 +625,42 @@ function renderLB(scores,players,editable){
     </div>`).join('')+`</div>`;
 }
 async function openVoting(){
-  if(!roomCode){toast('أنشئ الغرفة أول');return;}
+  if(!roomCode||!hostReady){toast('أنشئ الغرفة أول');return;}
   const sel=document.getElementById('vtSel');
   if(sel) H.voteSeconds=+sel.value;
-  // Sync scores from server before pushing
-  const sv=await pullFrom(roomCode);
-  if(sv&&sv.scores) H.scores=Object.assign({},H.scores,sv.scores);
-  if(sv&&sv.scoredRound!==undefined) H.scoredRound=sv.scoredRound;
-  H.votes={};H.votingOpen=true;H.voteDeadline=Date.now()+(H.voteSeconds||30)*1000;
-  pushTo(roomCode,H);renderHost();toast('التصويت مفتوح 🗳️');
+  await hostRun(async()=>{
+    const sv=await pullFrom(roomCode,H.rev||0);
+    if(_pullErr&&!sv){toast('تعذّر الاتصال — حاول مرة ثانية');return;}
+    mergeServer(sv);const snap=roundSnap();
+    H.votes={};H.votingOpen=true;H.voteRound=Date.now();      // fresh id per voting session
+    H.voteDeadline=Date.now()+(H.voteSeconds||30)*1000;
+    const ok=await hostCommit();
+    renderHost();
+    if(ok){toast('التصويت مفتوح 🗳️');clearTimeout(_finT);_finT=setTimeout(hostFinalize,(H.voteSeconds||30)*1000+700);}
+    else{roundRestore(snap);renderHost();toast('تعذّر الحفظ — اضغط مرة ثانية');}
+  });
 }
 async function endGame(){
   if(!confirm('تأكيد إنهاء اللعبة وعرض النتائج النهائية؟')) return;
-  const sv=await pullFrom(roomCode);
-  if(sv&&sv.scores) H.scores=Object.assign({},H.scores,sv.scores);
-  H.gameOver=true;
-  pushTo(roomCode,H);
-  renderEndGame($('hostView'),H.scores,H.players,true);
-  toast('🏆 انتهت اللعبة!');
+  await hostRun(async()=>{
+    const sv=await pullFrom(roomCode,H.rev||0);
+    if(_pullErr&&!sv){toast('تعذّر الاتصال — حاول مرة ثانية');return;}
+    mergeServer(sv);H.gameOver=true;
+    const ok=await hostCommit();
+    if(ok){renderEndGame($('hostView'),H.scores,H.players,true);toast('🏆 انتهت اللعبة!');}
+    else{H.gameOver=false;toast('تعذّر الحفظ — اضغط مرة ثانية');}
+  });
 }
-function resetScores(){
+async function resetScores(){
   if(!confirm('تأكيد إعادة تعيين كل النقاط؟')) return;
-  H.scores={};pushSoon();renderHost();toast('تم تصفير النقاط');
+  const sv=await pullFrom(roomCode);
+  Object.keys((sv&&sv.scores)||{}).concat(H.players,Object.keys(H.scores||{})).forEach(n=>{dirtyScores[n]=1;});
+  pendingDelta={};H.scores={};pushSoon();renderHost();toast('تم تصفير النقاط');
 }
 function addScore(name,delta){
   H.scores=H.scores||{};
   H.scores[name]=Math.max(0,(H.scores[name]||0)+delta);
+  pendingDelta[name]=(pendingDelta[name]||0)+delta;
   pushSoon();renderHost();
 }
 
@@ -485,7 +690,14 @@ function renderEndGame(container,scores,players,isHost){
       <div class="eg-among"><span>🔴</span><span>🟡</span><span>🟢</span><span>🔵</span><span>🟣</span></div>
     </div>`;
 }
-function newGameAfterEnd(){H.gameOver=false;H.scores={};renderHost();}
+async function newGameAfterEnd(){
+  await hostRun(async()=>{
+    const sv=await pullFrom(roomCode,H.rev||0);mergeServer(sv);
+    Object.keys(H.scores||{}).concat(H.players).forEach(n=>{dirtyScores[n]=1;});
+    pendingDelta={};H.scores={};H.gameOver=false;
+    await hostCommit();renderHost();
+  });
+}
 /* ============ PLAYER ============ */
 const MASK=`<svg viewBox="0 0 100 100" fill="none"><path d="M50 18c18 0 34 6 38 10 0 22-10 44-38 44S12 50 12 28c4-4 20-10 38-10Z" stroke="#a78bfa" stroke-width="3"/><ellipse cx="34" cy="40" rx="9" ry="7" fill="#a78bfa"/><ellipse cx="66" cy="40" rx="9" ry="7" fill="#a78bfa"/><path d="M40 60c4 4 16 4 20 0" stroke="#a78bfa" stroke-width="3" stroke-linecap="round"/></svg>`;
 let S=null, picked=null, revealed=false, verified=false, pinStage=null, lastV=-1, pollT=null, playerCode=null;
@@ -494,19 +706,44 @@ async function playerInit(code){
   playerCode=code;
   $('hostView').style.display='none';
   $('roleView').style.display='flex';
-  $('roleView').innerHTML=`<div class="badlink">جارٍ التحميل…</div>`;
+  $('roleView').innerHTML=`<div class="badlink">جارٍ التحميل…<br><span style="font-size:12px">لو طوّل، اضغط إعادة المحاولة</span><br><br><button class="go" style="max-width:240px" onclick="refresh(true)">🔄 إعادة المحاولة</button></div>`;
+  openStream(code,s=>handleState(s,false));
   await refresh(true);
-  pollT=setInterval(()=>refresh(false),6000);
+  pollLoop();
+}
+function pollLoop(){
+  if(typeof NO_BG_POLL!=='undefined'&&NO_BG_POLL) return;
+  clearTimeout(pollT);
+  const voting=S&&S.votingOpen&&S.scoredRound!==S.voteRound;
+  pollT=setTimeout(async()=>{
+    if(!document.hidden){try{await refresh(false);}catch(e){}}
+    pollLoop();
+  },streamAlive(playerCode)?25000:(voting?4000:9000));
 }
 async function refresh(first){
   const s=await pullFrom(playerCode);
-  if(!s){ if(first)$('roleView').innerHTML=`<div class="badlink">بانتظار الهوست… تأكد إنه أنشأ الغرفة.<br><br><button class="go" style="max-width:240px" onclick="refresh(true)">🔄 تحديث</button></div>`; return; }
+  if(!s){ if(first)$('roleView').innerHTML=`<div class="badlink">${_pullErr?'تعذّر الاتصال بالسيرفر — تأكد من الإنترنت':'بانتظار الهوست… تأكد إنه أنشأ الغرفة.'}<br><br><button class="go" style="max-width:240px" onclick="refresh(true)">🔄 تحديث</button></div>`; return; }
+  handleState(s,first);
+}
+function handleState(s,first){
+  if(S&&(s.rev||0)<(S.rev||0)) return;                // stale snapshot → ignore
   if(pinStage){ S=s; lastV=s.v; return; } // لا نقاطع كتابة الرمز
+  const _ae=document.activeElement;
+  if(_ae&&_ae.id==='impGuessInput'){ S=s; return; } // لا نمسح تخمين الامبوستر وهو يكتب
   const newRoundFlag = (s.v!==lastV);
-  const prevTotalVotes=S?Object.keys(S.votes||{}).length:0;
+  if(newRoundFlag||(S&&S.voteRound!==s.voteRound)) voteSel=[];
+  const prevTotalVotes=S?voteCount(S):0;
   const prevVotingOpen=S?!!S.votingOpen:false;
   S=s; lastV=s.v;
-  const nowTotalVotes=Object.keys(S.votes||{}).length;
+  const nowTotalVotes=voteCount(S);
+  // self-heal PIN: my lock was overwritten → set it again
+  const lostPin=Object.keys(myPins).find(n=>S.players.includes(n)&&!(S.pins||{})[n]);
+  if(lostPin&&!_healPin){_healPin=true;
+    safeUpdate(playerCode,st=>{st.pins=st.pins||{};if(st.pins[lostPin])return false;st.pins[lostPin]=myPins[lostPin];},st=>st.pins&&st.pins[lostPin]).finally(()=>{_healPin=false;});}
+  // self-heal: my vote was overwritten by a simultaneous writer → send it again
+  if(myCast&&picked&&!_healing&&S.voteRound===myCast.round&&S.votingOpen&&S.scoredRound!==S.voteRound&&Date.now()<=S.voteDeadline&&!asArr((S.votes||{})[picked]).length){
+    _healing=true; castVote(myCast.picks).finally(()=>{_healing=false;});
+  }
   if(!newRoundFlag && revealed && nowTotalVotes>prevTotalVotes && nowTotalVotes>=(S.players||[]).length) toast('✅ الكل صوّت — شوف الامبوستر!');
   const votingJustOpened=!prevVotingOpen && S.votingOpen;
   if(revealed && (votingJustOpened||(S.votingOpen&&newRoundFlag))) setTimeout(startVoteCountdown,200);
@@ -558,9 +795,22 @@ async function submitSetPin(){
   const a=toEN($('p1').value), e=$('perr');
   if(!/^\d{4}$/.test(a)){e.textContent='لازم ٤ أرقام';return;}
   const h=pinHash(a,playerCode);
-  const latest=(await pullFrom(playerCode))||S; latest.pins=latest.pins||{};
-  if(latest.pins[picked] && latest.pins[picked]!==h){ S=latest; pinStage='enter'; renderPinEnter(); $('perr').textContent='الاسم له رمز محطوط مسبقاً — اكتبه'; return; }
-  latest.pins[picked]=h; await pushTo(playerCode,latest); S=latest;
+  e.textContent='جارٍ الحفظ…';
+  let conflict=false;
+  const r=await safeUpdate(playerCode,st=>{
+    st.pins=st.pins||{};
+    if(st.pins[picked]&&st.pins[picked]!==h){conflict=true;return false;}
+    if(st.pins[picked]===h) return false;
+    st.pins[picked]=h;
+  },st=>st.pins&&st.pins[picked]===h);
+  if(conflict){ S=r||S; pinStage='enter'; renderPinEnter(); $('perr').textContent='الاسم له رمز محطوط مسبقاً — اكتبه'; return; }
+  if(!r){
+    myPins[picked]=h;                                     // keep the intent: it is retried automatically in the background
+    picked=null;pinStage=null;verified=false;renderPicker();
+    toast('الشبكة مشغولة — بنكمّل حفظ رمزك تلقائياً، انتظر ثواني');
+    return;
+  }
+  S=r; myPins[picked]=h;
   const nm=picked; picked=null; pinStage=null; verified=false; renderPicker();
   toast('تم حفظ رمز '+nm+' — اختر اسمك وادخل بالرمز');
 }
@@ -611,43 +861,49 @@ function startVoteCountdown(){
   tick();
   _cdInterval=setInterval(tick,500);
 }
+let voteSel=[], _finAt=0, myCast=null, _healing=false, myPins={}, _healPin=false;
 async function checkVoteTimeout(){
-  const latest=(await pullFrom(playerCode))||S;
-  if(latest.scoredRound===latest.voteRound){S=latest;drawReveal();return;}
-  if(!Object.keys(latest.votes||{}).length){S=latest;drawReveal();return;}
-  latest.scoredRound=latest.voteRound;
-  latest.votingOpen=false;
-  latest.scores=latest.scores||{};
-  const impSet=new Set(latest.imps||[]);
-  Object.entries(latest.votes||{}).forEach(([voter,target])=>{
-    if(impSet.has(target)) latest.scores[voter]=(latest.scores[voter]||0)+1;
-  });
-  await pushTo(playerCode,latest);
-  S=latest;
-  toast('⏰ انتهى وقت التصويت!');
+  _finAt=Date.now();
+  const r=await safeUpdate(playerCode,st=>{
+    if(st.v!==S.v||!st.votingOpen||Date.now()<st.voteDeadline) return false;
+    return scoreRound(st)?undefined:false;
+  },st=>st.scoredRound===st.voteRound);
+  if(r){
+    const was=S&&S.scoredRound===S.voteRound;
+    S=r;
+    if(!was&&r.scoredRound===r.voteRound) toast('⏰ انتهى وقت التصويت!');
+    drawReveal();
+  }
+}
+function toggleVote(name){
+  const k=(S.imps||[]).length, i=voteSel.indexOf(name);
+  if(i>=0) voteSel.splice(i,1);
+  else if(voteSel.length<k) voteSel.push(name);
+  else {toast('اخترت '+k+' بالفعل — شل واحد أول');return;}
   drawReveal();
 }
 function flip(){revealed=true;drawReveal();}
 function drawReveal(){
+  const _pg=document.getElementById('impGuessInput'); const _pgv=_pg?_pg.value:'';
   const imp=S.imps.includes(picked);
+  const k=S.imps.length;
   const blindMe=imp&&S.blindImp;
+  const partners=(imp&&!S.blindImp)?S.imps.filter(n=>n!==picked):[];
   const sealHtml = imp && !S.blindImp
     ? `<div class="glow"></div><div class="big-imp">أنت الامبوستر</div>`
         +(S.tellCat?`<div class="cat-pill" style="position:relative;z-index:1">التصنيف: ${S.cat}</div>`:'')
+        +(partners.length?`<div class="cat-pill" style="position:relative;z-index:1;background:rgba(244,63,94,.14);border-color:var(--red);color:#ffb3c0">🤝 شريكك: ${partners.join('، ')}</div>`:'')
         +(S.impHint&&S.impHintWord?`<div class="cat-pill" style="position:relative;z-index:1;background:rgba(250,204,21,.12);border-color:var(--gold);color:var(--gold)">💡 تلميحك: ${S.impHintWord}</div>`:'')
         +`<div class="tap" style="color:var(--red)">🤫 طنّش وخلّك معاهم</div>`
     : `<div class="glow"></div><div class="cat-pill">${S.cat}</div><div class="word" dir="auto">${blindMe?(S.impHintWord||S.word):S.word}</div><div class="tap" style="font-size:14px">هذي كلمتك السرية</div>`;
-  // impostor guess block (only if feature enabled)
-  const impGuesses=S.impGuesses||{};
-  const myGuessResult=impGuesses[picked]; // undefined | 'correct' | 'wrong'
+
+  // impostor word-guess (optional feature)
+  const myGuessResult=(S.impGuesses||{})[picked];
   let impGuessHtml='';
   if(imp && S.impCanGuess && !S.blindImp){
-    if(myGuessResult==='correct'){
-      impGuessHtml=`<div class="imp-guess-box"><div class="ig-result correct">✅ أصبت الكلمة! +1 نقطة</div></div>`;
-    } else if(myGuessResult==='wrong'){
-      impGuessHtml=`<div class="imp-guess-box"><div class="ig-result wrong">❌ ما أصبت — فرصتك انتهت</div></div>`;
-    } else {
-      impGuessHtml=`<div class="imp-guess-box">
+    if(myGuessResult==='correct') impGuessHtml=`<div class="imp-guess-box"><div class="ig-result correct">✅ أصبت الكلمة! +1 نقطة</div></div>`;
+    else if(myGuessResult==='wrong') impGuessHtml=`<div class="imp-guess-box"><div class="ig-result wrong">❌ ما أصبت — فرصتك انتهت</div></div>`;
+    else impGuessHtml=`<div class="imp-guess-box">
         <div class="ig-label">💡 تجرّب تخمّن الكلمة؟ (مرة وحدة)</div>
         <div class="ig-row">
           <input id="impGuessInput" class="ig-input" placeholder="اكتب الكلمة هنا…" maxlength="40" onkeydown="if(event.key==='Enter')submitImpGuess()">
@@ -655,89 +911,86 @@ function drawReveal(){
         </div>
         <div class="ig-warn">⚠️ بمجرد ما تضغط تأكيد ما تقدر ترجع</div>
       </div>`;
-    }
   }
 
+  // voting
   const votes=S.votes||{};
-  const totalVotes=Object.keys(votes).length;
-  const allVoted=S.players&&totalVotes>=S.players.length;
-  const myVote=votes[picked];
-  const impSet=new Set(S.imps||[]);
-  const votingOpen=S.votingOpen&&S.voteDeadline>Date.now();
-  const votingClosed=S.scoredRound===S.voteRound; // scoring already happened
-
-  let voteHtml='';
-  if(votingClosed||allVoted){
-    const iWon=impSet.has(myVote);
-    const voteRows=Object.entries(votes).map(([voter,target])=>{
-      const correct=impSet.has(target);
-      return `<div class="vrow">
-        <span class="vname">${voter}</span>
-        <span class="varrow">صوّت على</span>
-        <span class="vtarget ${correct?'vcorrect':'vwrong'}">${target}</span>
-        <span class="vicon">${correct?'✅':'❌'}</span>
-      </div>`;
-    }).join('');
-    const winners=Object.entries(votes).filter(([v,t])=>impSet.has(t)).map(([v])=>v);
-    voteHtml=`<div class="vote-panel">
-      <div class="vote-result">
-        <div class="vresult-label">🎭 الامبوستر الحقيقي</div>
-        <div class="rname">${S.imps.join('، ')}</div>
-        ${S.blindImp&&S.impHintWord?`<div style="font-size:13px;margin:6px 0;color:var(--muted)">🃏 كلمته كانت: <b style="color:var(--gold)">${S.impHintWord}</b> — الحقيقية: <b style="color:var(--ok)">${S.word}</b></div>`:''}
-        ${myVote?(iWon?'<div class="vwon-badge">🏆 أجبت صح! +1 نقطة</div>':'<div class="vlost-badge">❌ ما أصبت</div>'):'<div class="vlost-badge">⏰ ما صوّتت في الوقت</div>'}
-      </div>
-      ${voteRows?`<div class="vrows-wrap"><div class="vrows-title">🗳️ كيف صوّت الجميع</div>${voteRows}</div>`:''}
-      ${winners.length?`<div class="vwinners">🎯 أصابوا: ${winners.join('، ')}</div>`:''}
-    </div>`;
-  } else if(!S.votingOpen){
-    voteHtml=`<div class="vote-panel">
-      <div class="vote-wait" style="font-size:14px">⏳ انتظر الهوست يفتح التصويت…</div>
-    </div>`;
-  } else if(myVote){
-    const voteRows=Object.entries(votes).map(([voter,target])=>
-      `<div class="vrow"><span class="vname">${voter}</span><span class="varrow">صوّت على</span><span class="vtarget">${target}</span></div>`
-    ).join('');
+  const total=voteCount(S);
+  const myPicks=asArr(votes[picked]);
+  const imps=new Set(S.imps||[]);
+  const closed=S.scoredRound===S.voteRound;
+  const expired=S.votingOpen&&!closed&&Date.now()>S.voteDeadline;
+  const rows=(reveal)=>Object.entries(votes).filter(([v])=>(S.players||[]).includes(v)).map(([v,t])=>{
+    const tg=asArr(t).map(x=>reveal
+      ?`<span class="vtarget ${imps.has(x)?'vcorrect':'vwrong'}">${x} ${imps.has(x)?'✅':'❌'}</span>`
+      :`<span class="vtarget">${x}</span>`).join('<span class="varrow">و</span>');
+    return `<div class="vrow"><span class="vname">${v}</span><span class="varrow">صوّت على</span>${tg}</div>`;
+  }).join('');
+  const clock=()=>{
     const rem=Math.max(0,Math.ceil((S.voteDeadline-Date.now())/1000));
     const pct=Math.max(0,rem/(S.voteSeconds||30)*100);
-    const circum=2*Math.PI*20;
-    voteHtml=`<div class="vote-panel">
-      <div class="vcd-wrap">
-        <svg width="54" height="54" viewBox="0 0 54 54"><circle cx="27" cy="27" r="20" fill="none" stroke="var(--line)" stroke-width="5"/><circle id="vcdarc" cx="27" cy="27" r="20" fill="none" stroke="var(--violet)" stroke-width="5" stroke-linecap="round" stroke-dasharray="${circum}" stroke-dashoffset="${circum*(1-pct/100)}" transform="rotate(-90 27 27)" style="transition:stroke-dashoffset .5s"/></svg>
+    const c=2*Math.PI*20;
+    return `<div class="vcd-wrap">
+        <svg width="54" height="54" viewBox="0 0 54 54"><circle cx="27" cy="27" r="20" fill="none" stroke="var(--line)" stroke-width="5"/><circle id="vcdarc" cx="27" cy="27" r="20" fill="none" stroke="var(--violet)" stroke-width="5" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-pct/100)}" transform="rotate(-90 27 27)" style="transition:stroke-dashoffset .5s"/></svg>
         <div id="vcd" class="vcd-num" style="color:${rem<=10?'var(--red)':'var(--violet-soft)'}">${rem}ث</div>
+      </div>`;
+  };
+
+  let voteHtml='';
+  if(closed){
+    const myPts=myPicks.filter(x=>imps.has(x)).length;
+    const winners=(S.players||[]).map(p=>[p,asArr(votes[p]).filter(x=>imps.has(x)).length]).filter(([p,n])=>n>0);
+    voteHtml=`<div class="vote-panel">
+      <div class="vote-result">
+        <div class="vresult-label">🎭 ${k>1?'الامبوستر الحقيقيين':'الامبوستر الحقيقي'}</div>
+        <div class="rname">${S.imps.join('، ')}</div>
+        ${S.blindImp&&S.impHintWord?`<div style="font-size:13px;margin:6px 0;color:var(--muted)">🃏 ${k>1?'كلمتهم':'كلمته'} كانت: <b style="color:var(--gold)">${S.impHintWord}</b> — الحقيقية: <b style="color:var(--ok)">${S.word}</b></div>`:''}
+        ${myPicks.length?(myPts?`<div class="vwon-badge">🏆 أصبت ${myPts}${k>1?' من '+k:''}! +${myPts} نقطة</div>`:'<div class="vlost-badge">❌ ما أصبت</div>'):'<div class="vlost-badge">⏰ ما صوّتت في الوقت</div>'}
       </div>
-      <div class="vote-title" style="margin-bottom:6px">صوّتك: <b style="color:var(--violet-soft)">${myVote}</b></div>
-      ${voteRows?`<div class="vrows-wrap">${voteRows}</div>`:''}
-      <div class="vote-wait">${totalVotes} / ${S.players.length} صوتوا</div>
+      ${rows(true)?`<div class="vrows-wrap"><div class="vrows-title">🗳️ كيف صوّت الجميع</div>${rows(true)}</div>`:''}
+      ${winners.length?`<div class="vwinners">🎯 أصابوا: ${winners.map(([p,n])=>p+(k>1?` (${n})`:'')).join('، ')}</div>`:''}
+    </div>`;
+  } else if(expired){
+    voteHtml=`<div class="vote-panel"><div class="vote-wait" style="font-size:14px">⏳ جاري احتساب النتيجة…</div></div>`;
+    if(Date.now()-_finAt>6000) setTimeout(checkVoteTimeout,0);
+  } else if(!S.votingOpen){
+    voteHtml=`<div class="vote-panel"><div class="vote-wait" style="font-size:14px">⏳ انتظر الهوست يفتح التصويت…</div></div>`;
+  } else if(myPicks.length){
+    voteHtml=`<div class="vote-panel">
+      ${clock()}
+      <div class="vote-title" style="margin-bottom:6px">صوّتك: <b style="color:var(--violet-soft)">${myPicks.join('، ')}</b></div>
+      ${rows(false)?`<div class="vrows-wrap">${rows(false)}</div>`:''}
+      <div class="vote-wait">${total} / ${S.players.length} صوتوا</div>
     </div>`;
     setTimeout(startVoteCountdown,0);
   } else {
     const others=S.players.filter(n=>n!==picked);
-    const voteRows=Object.entries(votes).map(([voter,target])=>
-      `<div class="vrow"><span class="vname">${voter}</span><span class="varrow">صوّت على</span><span class="vtarget">${target}</span></div>`
-    ).join('');
-    const rem=Math.max(0,Math.ceil((S.voteDeadline-Date.now())/1000));
-    const pct=Math.max(0,rem/(S.voteSeconds||30)*100);
-    const circum=2*Math.PI*20;
+    const multi=k>1;
     voteHtml=`<div class="vote-panel">
-      <div class="vcd-wrap">
-        <svg width="54" height="54" viewBox="0 0 54 54"><circle cx="27" cy="27" r="20" fill="none" stroke="var(--line)" stroke-width="5"/><circle id="vcdarc" cx="27" cy="27" r="20" fill="none" stroke="var(--violet)" stroke-width="5" stroke-linecap="round" stroke-dasharray="${circum}" stroke-dashoffset="${circum*(1-pct/100)}" transform="rotate(-90 27 27)" style="transition:stroke-dashoffset .5s"/></svg>
-        <div id="vcd" class="vcd-num" style="color:${rem<=10?'var(--red)':'var(--violet-soft)'}">${rem}ث</div>
-      </div>
-      <div class="vote-title">🗳️ من تعتقد إنه الامبوستر؟</div>
-      <div class="vote-grid">${others.map(n=>`<button class="vote-btn" onclick="castVote('${esc(n)}')">${n}</button>`).join('')}</div>
-      ${voteRows?`<div class="vrows-wrap" style="margin-top:8px">${voteRows}</div>`:''}
-      <div class="vote-wait">${totalVotes} / ${S.players.length} صوتوا</div>
+      ${clock()}
+      <div class="vote-title">${multi?`🗳️ اختر ${k} تظنهم الامبوستر (${voteSel.length}/${k})`:'🗳️ من تعتقد إنه الامبوستر؟'}</div>
+      <div class="vote-grid">${others.map(n=>multi
+        ?`<button class="vote-btn${voteSel.includes(n)?' sel':''}" onclick="toggleVote('${esc(n)}')">${n}</button>`
+        :`<button class="vote-btn" onclick="castVote('${esc(n)}')">${n}</button>`).join('')}</div>
+      ${multi?`<button class="go" style="margin-top:6px;padding:13px;font-size:16px" ${voteSel.length!==k?'disabled':''} onclick="castVote(voteSel.slice())">✅ تأكيد التصويت (${voteSel.length}/${k})</button>`:''}
+      ${rows(false)?`<div class="vrows-wrap" style="margin-top:10px">${rows(false)}</div>`:''}
+      <div class="vote-wait">${total} / ${S.players.length} صوتوا</div>
     </div>`;
     setTimeout(startVoteCountdown,0);
   }
+
+  const foot = imp&&!S.blindImp
+    ? (k>1?`أنتم ${k} امبوستر — تعاونوا بدون ما يبان عليكم. ما عندكم الكلمة.`:'ما عندك الكلمة. اسمع تلميحاتهم وجاوب بشكل يخليهم ما يشكّون فيك.')
+    : 'احفظ الكلمة ولا تقولها صريحة. لمّحوا لها بالدور.';
   $('roleView').innerHTML=`<div class="seal revealed" id="seal">${sealHtml}</div>
-    <div class="role-foot">${imp&&!S.blindImp?'ما عندك الكلمة. اسمع تلميحاتهم وجاوب بشكل يخليهم ما يشكّون فيك.':'احفظ الكلمة ولا تقولها صريحة. لمّحوا لها بالدور.'}</div>
+    <div class="role-foot">${foot}</div>
     ${impGuessHtml}
     ${voteHtml}
     ${renderLB(S.scores||{},S.players||[],false)}
     <div class="ctl"><button class="upd" onclick="refresh(false)">🔄 تحديث</button>
     <button onclick="picked=null;verified=false;revealed=false;renderPicker()">↩︎ مب أنا</button></div>`;
   $('roleView').classList.toggle('imp', imp && !S.blindImp);
+  const _ni=document.getElementById('impGuessInput'); if(_ni&&_pgv) _ni.value=_pgv;
 }
 
 async function submitImpGuess(){
@@ -745,53 +998,51 @@ async function submitImpGuess(){
   if(!inp) return;
   const guess=(inp.value||'').trim();
   if(!guess){inp.style.borderColor='var(--red)';return;}
-  // normalize: remove Arabic diacritics, trim, lowercase
-  function norm(s){return s.replace(/[\u064B-\u065F]/g,'').trim().toLowerCase();}
-  const correct = norm(guess) === norm(S.word);
-  const latest=(await pullFrom(playerCode))||S;
-  latest.impGuesses=latest.impGuesses||{};
-  if(latest.impGuesses[picked]) return; // already guessed
-  latest.impGuesses[picked]=correct?'correct':'wrong';
-  if(correct){
-    latest.scores=latest.scores||{};
-    latest.scores[picked]=(latest.scores[picked]||0)+1;
-    toast('🎉 أصبت الكلمة! +1 نقطة');
-  } else {
-    toast('❌ ما أصبت — الكلمة كانت: '+S.word);
-  }
-  await pushTo(playerCode,latest);
-  S=latest;
+  const norm=s=>(''+s).replace(/[\u064B-\u065F]/g,'').trim().toLowerCase();
+  let result=null;
+  toast('جارٍ الإرسال…');
+  const r=await safeUpdate(playerCode,st=>{
+    st.impGuesses=st.impGuesses||{};
+    if(st.impGuesses[picked]){result=st.impGuesses[picked];return false;}
+    result=norm(guess)===norm(st.word)?'correct':'wrong';
+    st.impGuesses[picked]=result;
+    if(result==='correct'){st.scores=st.scores||{};st.scores[picked]=(st.scores[picked]||0)+1;}
+  },st=>st.impGuesses&&st.impGuesses[picked]);
+  if(!r){toast('تعذّر الإرسال — جرّب مرة ثانية');return;}
+  S=r;
+  toast(result==='correct'?'🎉 أصبت الكلمة! +1 نقطة':'❌ ما أصبت — الكلمة كانت: '+r.word);
   drawReveal();
 }
-async function castVote(name){
+
+/* arg = one name (single impostor) or an array of exactly k names (multiple impostors) */
+async function castVote(arg){
+  const picks=asArr(arg);
+  const k=(S.imps||[]).length;
   if(!S.votingOpen||Date.now()>S.voteDeadline){toast('التصويت مغلق');return;}
-  const latest=(await pullFrom(playerCode))||S;
-  if(!latest.votingOpen||Date.now()>latest.voteDeadline){toast('انتهى وقت التصويت');return;}
-  latest.votes=latest.votes||{};
-  if(latest.votes[picked]) return;
-  latest.votes[picked]=name;
-
-  // Auto-score when all have voted (only once per round)
-  const totalNow=Object.keys(latest.votes).length;
-  if(totalNow>=(latest.players||[]).length && latest.scoredRound!==latest.voteRound){
-    latest.scoredRound=latest.voteRound;
-    latest.scores=latest.scores||{};
-    const impSet=new Set(latest.imps||[]);
-    Object.entries(latest.votes).forEach(([voter,target])=>{
-      if(impSet.has(target)) latest.scores[voter]=(latest.scores[voter]||0)+1;
-    });
-  }
-
-  await pushTo(playerCode,latest);
-  S=latest;
+  if(picks.length!==k||new Set(picks).size!==k||picks.includes(picked)){toast('اختر '+k+' بالضبط');return;}
+  let closed=false;
+  myCast={round:S.voteRound,picks};          // intent: re-sent automatically if another writer overwrites it
+  toast('جارٍ تسجيل صوتك…');
+  const r=await safeUpdate(playerCode,st=>{
+    if(!st.votingOpen||Date.now()>st.voteDeadline){closed=true;return false;}
+    st.votes=st.votes||{};
+    if(asArr(st.votes[picked]).length) return false;
+    st.votes[picked]=picks;
+    if(voteCount(st)>=(st.players||[]).length) scoreRound(st);
+  },st=>asArr((st.votes||{})[picked]).join('|')===picks.join('|'));
+  if(!r){toast('جاري إعادة المحاولة تلقائياً…');return;}
+  S=r; voteSel=[];
+  if(closed) myCast=null;
+  if(closed){toast('انتهى وقت التصويت');}
+  else toast('تم تسجيل صوتك ✓');
   if(revealed) drawReveal(); else renderRole(false);
-  toast('تم تسجيل صوتك ✓');
 }
 function flashSeal(){const s=$('seal');if(s){s.classList.remove('flash');void s.offsetWidth;s.classList.add('flash');}}
 
 /* ============ particles + routing ============ */
 (function(){const p=$('particles');for(let i=0;i<14;i++){const s=document.createElement('span');s.style.left=Math.random()*100+'%';s.style.animationDuration=(8+Math.random()*10)+'s';s.style.animationDelay=(-Math.random()*12)+'s';s.style.opacity=(.15+Math.random()*.35);p.appendChild(s);}})();
 
+document.addEventListener&&document.addEventListener('visibilitychange',()=>{if(document.hidden)return;if(playerCode)refresh(false);else if(roomCode&&hostReady)pullFrom(roomCode).then(hostApply);});
 const hRoom=location.hash.match(/room=([a-z0-9]+)/i);
 const hHost=location.hash.match(/host=([a-z0-9]+)/i);
 if(hRoom){ playerInit(hRoom[1]); }
